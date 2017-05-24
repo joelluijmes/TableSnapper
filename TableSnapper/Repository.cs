@@ -68,6 +68,11 @@ namespace TableSnapper
             return databases;
         }
 
+        private Task ProcessQueryAsync(string command)
+        {
+            return ProcessQueryAsync(command, x => { });
+        }
+
         private Task ProcessQueryAsync(string command, Action<SqlDataReader> callback)
         {
             return ProcessQueryAsync(command, row =>
@@ -101,11 +106,9 @@ namespace TableSnapper
             using (var reader = await sqlCommand.ExecuteReaderAsync())
             {
                 while (await reader.ReadAsync())
-                {
                     // stop if callback returned false
                     if (!await callback(reader))
                         break;
-                }
             }
         }
 
@@ -145,7 +148,7 @@ namespace TableSnapper
                     reader["columnName"].ToString(),
                     reader["keyName"].ToString()
                 );
-                
+
                 // stop iterating : there wouldn't be more than one primary key
                 return false;
             });
@@ -247,7 +250,7 @@ namespace TableSnapper
 
         public async Task DropTable(string tableName, bool dropReferencingTables = true)
         {
-            var referencingKeys = 
+            var referencingKeys =
                 (await ListForeignKeysAsync(null))
                 .Where(key => key.IsForeignKey && key.ForeignTable == tableName)
                 .ToList();
@@ -261,15 +264,28 @@ namespace TableSnapper
                     await DropTable(key.TableName);
             }
 
-            await ProcessQueryAsync($"DROP TABLE IF EXISTS {tableName}", x => {});
+            await ProcessQueryAsync($"DROP TABLE IF EXISTS {tableName}");
         }
-        
+
         public async Task SynchronizeWithAsync(Repository inputRepository)
         {
             var tables = await inputRepository.ListTablesAsync();
-            
+
             foreach (var table in tables)
+            {
                 await DropTable(table.Name);
+                await ProcessQueryAsync(table.CreateTableSql());
+
+                using (var command = new SqlCommand($"SELECT * FROM {table.Name}", inputRepository._sqlConnection))
+                using (var reader = await command.ExecuteReaderAsync())
+                using (var bulkCopy = new SqlBulkCopy(_sqlConnection))
+                {
+                    bulkCopy.BatchSize = 500;
+                    bulkCopy.DestinationTableName = table.Name;
+
+                    await bulkCopy.WriteToServerAsync(reader);
+                }
+            }
         }
     }
 }
