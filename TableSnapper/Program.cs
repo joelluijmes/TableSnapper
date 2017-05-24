@@ -25,6 +25,8 @@ namespace TableSnapper
                 Console.WriteLine(table.CreateTableSql());
                 Console.WriteLine();
             }
+
+            await repoB.SynchronizeWithAsync(repoA);
         }
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
+using System.Linq;
 using System.Threading.Tasks;
 using TableSnapper.Models;
 
@@ -126,24 +127,25 @@ namespace TableSnapper
             return tables;
         }
 
-        private async Task<Key> GetPrimaryKeyAsync(string tableName)
+        private async Task<Key> ListPrimaryKeyAsync(string tableName)
         {
-            var query = "SELECT		COLUMN_NAME, col.CONSTRAINT_NAME\r\n" +
+            var query = "SELECT		tab.TABLE_NAME as tableName, COLUMN_NAME as columnName, col.CONSTRAINT_NAME as keyName\r\n" +
                         "FROM		INFORMATION_SCHEMA.TABLE_CONSTRAINTS tab\r\n" +
                         "INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE col\r\n" +
                         "ON			tab.CONSTRAINT_NAME = col.CONSTRAINT_NAME AND\r\n" +
                         "			tab.TABLE_NAME = col.TABLE_NAME\r\n" +
                         "WHERE		CONSTRAINT_TYPE = 'PRIMARY KEY' AND\r\n" +
-                        $"			tab.TABLE_NAME = '{tableName}'";
+                        (tableName != null ? $"tab.TABLE_NAME = '{tableName}'" : "");
 
             Key primaryKey = null;
             await ProcessQueryAsync(query, reader =>
             {
-                if (reader.IsDBNull(0) || reader.IsDBNull(1))
-                    throw new InvalidOperationException();
-
-                primaryKey = new Key(reader.GetString(0), reader.GetString(1));
-
+                primaryKey = new Key(
+                    reader["tableName"].ToString(),
+                    reader["columnName"].ToString(),
+                    reader["keyName"].ToString()
+                );
+                
                 // stop iterating : there wouldn't be more than one primary key
                 return false;
             });
@@ -151,24 +153,29 @@ namespace TableSnapper
             return primaryKey;
         }
 
-        private async Task<List<Key>> GetForeignKeysAsync(string tableName)
+        private async Task<List<Key>> ListForeignKeysAsync(string tableName)
         {
             var query = "SELECT		COL_NAME(fc.parent_object_id, fc.parent_column_id) AS ColumnName,\r\n" +
                         "           f.name AS KeyName,\r\n" +
                         "			OBJECT_NAME (f.referenced_object_id) AS ReferenceTableName,\r\n" +
-                        "			COL_NAME(fc.referenced_object_id, fc.referenced_column_id) AS ReferenceColumnName\r\n" +
+                        "			COL_NAME(fc.referenced_object_id, fc.referenced_column_id) AS ReferenceColumnName,\r\n" +
+                        "			OBJECT_NAME(f.parent_object_id) AS TableName\r\n" +
                         "FROM		sys.foreign_keys AS f\r\n" +
                         "INNER JOIN	sys.foreign_key_columns AS fc\r\n" +
                         "ON			f.OBJECT_ID = fc.constraint_object_id\r\n" +
-                        $"WHERE     OBJECT_NAME(f.parent_object_id) = '{tableName}'";
+                        (tableName != null ? $"WHERE OBJECT_NAME(f.parent_object_id) = '{tableName}'" : "");
 
             var keys = new List<Key>();
             await ProcessQueryAsync(query, reader =>
             {
-                if (reader.IsDBNull(0) || reader.IsDBNull(1) || reader.IsDBNull(2) || reader.IsDBNull(3))
-                    throw new InvalidOperationException();
+                var key = new Key(
+                    reader["TableName"].ToString(),
+                    reader["ColumnName"].ToString(),
+                    reader["KeyName"].ToString(),
+                    reader["ReferenceTableName"].ToString(),
+                    reader["ReferenceColumnName"].ToString()
+                );
 
-                var key = new Key(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3));
                 keys.Add(key);
             });
 
@@ -179,11 +186,11 @@ namespace TableSnapper
         {
             var keys = new List<Key>();
 
-            var primaryKey = await GetPrimaryKeyAsync(tableName);
+            var primaryKey = await ListPrimaryKeyAsync(tableName);
             if (primaryKey != null)
                 keys.Add(primaryKey);
 
-            var foreignKeys = await GetForeignKeysAsync(tableName);
+            var foreignKeys = await ListForeignKeysAsync(tableName);
             if (foreignKeys != null)
                 keys.AddRange(foreignKeys);
 
@@ -195,6 +202,7 @@ namespace TableSnapper
             var columns = new List<Column>();
 
             var query = "SELECT	COLUMN_NAME as name,\r\n" +
+                        "		TABLE_NAME as tableName,\r\n" +
                         "		ORDINAL_POSITION as position,\r\n" +
                         "		COLUMN_DEFAULT as defaultValue,\r\n" +
                         "		IS_NULLABLE as isNullable,\r\n" +
@@ -204,11 +212,12 @@ namespace TableSnapper
                         "		NUMERIC_SCALE as numericScale,\r\n" +
                         "		(SELECT COLUMNPROPERTY(OBJECT_ID(TABLE_NAME), COLUMN_NAME, 'isIdentity')) as isIdentity\r\n" +
                         "FROM	INFORMATION_SCHEMA.COLUMNS\r\n" +
-                        $"WHERE TABLE_NAME='{tableName}'";
+                        (tableName != null ? $"WHERE TABLE_NAME='{tableName}'" : "");
 
             await ProcessQueryAsync(query, columnRow =>
             {
                 var column = new Column(
+                    columnRow["tableName"].ToString(),
                     columnRow.GetString(columnRow.GetOrdinal("name")),
                     columnRow.GetInt32(columnRow.GetOrdinal("position")),
                     columnRow.IsDBNull(columnRow.GetOrdinal("defaultValue")) ? null : columnRow["defaultValue"],
@@ -234,6 +243,33 @@ namespace TableSnapper
                 bulkCopy.DestinationTableName = table;
                 await bulkCopy.WriteToServerAsync(reader);
             }
+        }
+
+        public async Task DropTable(string tableName, bool dropReferencingTables = true)
+        {
+            var referencingKeys = 
+                (await ListForeignKeysAsync(null))
+                .Where(key => key.IsForeignKey && key.ForeignTable == tableName)
+                .ToList();
+
+            if (referencingKeys.Any())
+            {
+                if (!dropReferencingTables)
+                    throw new InvalidOperationException($"This table is referenced by one or more foreign keys.");
+
+                foreach (var key in referencingKeys)
+                    await DropTable(key.TableName);
+            }
+
+            await ProcessQueryAsync($"DROP TABLE IF EXISTS {tableName}", x => {});
+        }
+        
+        public async Task SynchronizeWithAsync(Repository inputRepository)
+        {
+            var tables = await inputRepository.ListTablesAsync();
+            
+            foreach (var table in tables)
+                await DropTable(table.Name);
         }
     }
 }

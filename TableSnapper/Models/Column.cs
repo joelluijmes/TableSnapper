@@ -4,6 +4,7 @@ using System.Text;
 namespace TableSnapper.Models {
     internal class Column
     {
+        public string TableName { get; }
         public string Name { get; }
         public int Position { get; }
         public object DefaultValue { get; }
@@ -14,8 +15,9 @@ namespace TableSnapper.Models {
         public int? NumericScale { get; }
         public bool IsIdentity { get; }
 
-        public Column(string name, int position, object defaultValue, bool isNullable, string dataTypeName, int? characterMaximumLength, int? numericPrecision, int? numericScale, bool isIdentity)
+        public Column(string tableName, string name, int position, object defaultValue, bool isNullable, string dataTypeName, int? characterMaximumLength, int? numericPrecision, int? numericScale, bool isIdentity)
         {
+            TableName = tableName;
             Name = name;
             Position = position;
             DefaultValue = defaultValue;
