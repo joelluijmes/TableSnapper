@@ -1,3 +1,4 @@
-﻿namespace TableSnapper.Models {
+﻿namespace TableSnapper.Models
+{
     internal class Constraint { }
 }

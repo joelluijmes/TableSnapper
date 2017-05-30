@@ -1,6 +1,4 @@
 ﻿using System;
-using System.Linq;
-using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Nito.AsyncEx;
 
@@ -22,7 +20,7 @@ namespace TableSnapper
 
             foreach (var table in tablesA)
             {
-                Console.WriteLine(table.CreateTableSql());
+                Console.WriteLine(Repository.CreateTableStructureSql(table));
                 Console.WriteLine();
             }
 

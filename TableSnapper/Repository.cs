@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using TableSnapper.Models;
 
@@ -36,10 +37,7 @@ namespace TableSnapper
             _disposed = true;
         }
 
-        public static Task<Repository> OpenServerAsync(string server)
-        {
-            return OpenDatabaseAsync(server, null);
-        }
+        public static Task<Repository> OpenServerAsync(string server) => OpenDatabaseAsync(server, null);
 
         public static async Task<Repository> OpenDatabaseAsync(string server, string database)
         {
@@ -49,10 +47,7 @@ namespace TableSnapper
             return repo;
         }
 
-        public Task OpenAsync()
-        {
-            return _sqlConnection.OpenAsync();
-        }
+        public Task OpenAsync() => _sqlConnection.OpenAsync();
 
         public async Task<List<string>> ListDatabasesAsync()
         {
@@ -274,7 +269,7 @@ namespace TableSnapper
             foreach (var table in tables)
             {
                 await DropTable(table.Name);
-                await ProcessQueryAsync(table.CreateTableSql());
+                await ProcessQueryAsync(CreateTableStructureSql(table));
 
                 using (var command = new SqlCommand($"SELECT * FROM {table.Name}", inputRepository._sqlConnection))
                 using (var reader = await command.ExecuteReaderAsync())
@@ -286,6 +281,58 @@ namespace TableSnapper
                     await bulkCopy.WriteToServerAsync(reader);
                 }
             }
+        }
+
+        public static string CreateTableStructureSql(Table table)
+        {
+            var builder = new StringBuilder();
+            builder.AppendLine($"CREATE TABLE {table.Name}(");
+
+            var primaryKey = table.Keys.SingleOrDefault(key => key.IsPrimaryKey);
+            var foreignKeys = table.Keys.Where(key => key.IsForeignKey).ToList();
+
+            for (var i = 0; i < table.Columns.Count; i++)
+            {
+                var column = table.Columns[i];
+                // COLUMN
+                builder.Append($"  {column.Name} {column.DataTypeName} ");
+                if (column.CharacterMaximumLength.HasValue)
+                    builder.Append($"({column.CharacterMaximumLength}) ");
+
+                if (column.DataTypeName == "decimal")
+                {
+                    if (column.NumericPrecision.HasValue && !column.NumericScale.HasValue)
+                        builder.Append($"({column.NumericPrecision}) ");
+                    else if (column.NumericPrecision.HasValue && column.NumericScale.HasValue)
+                        builder.Append($"({column.NumericPrecision}, {column.NumericScale}) ");
+                    else
+                        throw new InvalidOperationException("Unable to parse decimal");
+                }
+
+                if (column.IsIdentity)
+                    builder.Append("IDENTITY ");
+
+                if (!column.IsNullable)
+                    builder.Append("NOT NULL ");
+
+                // DEFAULT VALUE
+                if (column.DefaultValue != null)
+                    builder.Append($"DEFAULT({column.DefaultValue})");
+
+                // KEY
+                if (primaryKey != null && primaryKey.Column == column.Name)
+                    builder.Append(" PRIMARY KEY");
+
+                var foreignKey = foreignKeys.SingleOrDefault(key => key.Column == column.Name);
+                if (foreignKey != null)
+                    builder.Append($" REFERENCES {foreignKey.ForeignTable}({foreignKey.ForeignColumn})");
+
+                // add the , if not last column
+                builder.AppendLine(i < table.Columns.Count - 1 ? "," : "");
+            }
+
+            builder.AppendLine(");");
+            return builder.ToString();
         }
     }
 }
