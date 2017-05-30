@@ -33,10 +33,10 @@ namespace TableSnapper
             var connectionB = await DatabaseConnection.CreateConnectionAsync("localhost", "TestB");
             var databaseB = new DatabaseManager(connectionB);
 
-            await databaseB.CloneFromAsync(databaseA, true);
+            var baseDirectory = Path.Combine(Environment.GetEnvironmentVariable("LocalAppData"), "TableSnapper");
+            var directory = await databaseA.BackupToDirectoryAsync(baseDirectory);
 
-            var directory = Path.Combine(Environment.GetEnvironmentVariable("LocalAppData"), "TableSnapper");
-            await databaseA.BackupToFileAsync(directory, false);
+            await databaseB.CloneFromDirectoryAsync(directory);
             
             _logger.LogInformation("Completed");
         }

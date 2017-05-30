@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using TableSnapper.Models;
@@ -31,9 +32,9 @@ namespace TableSnapper
             _disposed = true;
         }
 
-        public async Task BackupToFileAsync(string directory, bool splitPerTable = true, bool skipData = false)
+        public async Task<string> BackupToDirectoryAsync(string baseDirectory, bool splitPerTable = true, bool skipData = false)
         {
-            directory = Path.Combine(directory, $"{DateTime.Now:ddMMyy-HHmmss}");
+            var directory = Path.Combine(baseDirectory, $"{DateTime.Now:ddMMyy-HHmmss}");
             Directory.CreateDirectory(directory);
 
             var tables = await ListTablesAsync();
@@ -47,15 +48,17 @@ namespace TableSnapper
 
                 if (splitPerTable)
                 {
-                    var path = Path.Combine(directory, $"{i}_{table.Name}.sql");
+                    var path = Path.Combine(directory, $"{i + 1}_{table.Name}.sql");
                     File.WriteAllText(path, clone);
                 }
                 else
                 {
-                    var path = Path.Combine(directory, "backup.sql");
+                    var path = Path.Combine(directory, "0_backup.sql");
                     File.AppendAllText(path, clone);
                 }
             }
+
+            return directory;
         }
 
         public async Task CloneFromAsync(DatabaseManager otherDatabase, bool skipData = false)
@@ -73,6 +76,19 @@ namespace TableSnapper
                     : await otherDatabase.CloneTableSqlAsync(table);
 
                 await _connection.ExecuteNonQueryAsync(clone);
+            }
+        }
+
+        public async Task CloneFromDirectoryAsync(string directory)
+        {
+            var files = Directory.GetFiles(directory).OrderBy(f => f).ToArray();
+            if (files.Any(f => !Regex.IsMatch(f, "\\d+_.*\\.sql")))
+                throw new InvalidOperationException("Directory contains one or more invalid files to import");
+
+            foreach (var file in files)
+            {
+                var content = File.ReadAllText(file);
+                await _connection.ExecuteNonQueryAsync(content);
             }
         }
 
