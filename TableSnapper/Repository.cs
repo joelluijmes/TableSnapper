@@ -294,7 +294,7 @@ namespace TableSnapper
 
             // we need to explicity set 'IDENTITY_INSERT' on before we can insert values in a table
             // with a identity column
-            var shouldDisableIdentityInsert = table.Keys.Any(k => k.IsPrimaryKey);
+            var shouldDisableIdentityInsert = table.Columns.Any(c => c.IsIdentity);
             
             if (shouldDisableIdentityInsert)
                 builder.AppendLine($"SET IDENTITY_INSERT {tableName} ON");
