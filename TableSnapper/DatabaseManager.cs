@@ -30,6 +30,24 @@ namespace TableSnapper
             _disposed = true;
         }
 
+        public async Task CloneFromAsync(DatabaseManager otherDatabase, bool structureOnly = false)
+        {
+            var tables = await otherDatabase.ListTablesAsync();
+
+            // tables is sorted on dependency, so we delete the tables in reverse
+            for (var i = tables.Count - 1; i >= 0; --i)
+                await DropTableAsync(tables[i].Name);
+
+            foreach (var table in tables)
+            {
+                var clone = structureOnly
+                    ? otherDatabase.CloneTableStructureSql(table)
+                    : await otherDatabase.CloneTableSqlAsync(table);
+
+                await _connection.ExecuteNonQueryAsync(clone);
+            }
+        }
+
         public async Task<string> CloneTableDataSqlAsync(Table table)
         {
             _logger.LogDebug($"cloning table data of {table}..");
@@ -81,7 +99,7 @@ namespace TableSnapper
             return builder.ToString();
         }
 
-        public static string CloneTableStructureSql(Table table)
+        public string CloneTableStructureSql(Table table)
         {
             _logger.LogDebug($"cloning table structure of {table}..");
 
@@ -190,21 +208,6 @@ namespace TableSnapper
             return tables;
         }
 
-        public async Task CloneFromAsync(DatabaseManager otherDatabase)
-        {
-            var tables = await otherDatabase.ListTablesAsync();
-
-            // tables is sorted on dependency, so we delete the tables in reverse
-            for (var i = tables.Count - 1; i >= 0; --i)
-                await DropTableAsync(tables[i].Name);
-
-            foreach (var table in tables)
-            {
-                var clone = await otherDatabase.CloneTableSqlAsync(table);
-                await _connection.ExecuteNonQueryAsync(clone);
-            }
-        }
-
         private async Task<List<Column>> ListColumnsAsync(string tableName)
         {
             _logger.LogDebug($"listing columns of {tableName}..");
@@ -273,7 +276,7 @@ namespace TableSnapper
 
             return keys;
         }
-        
+
         private async Task<List<Key>> ListKeysAsync(string tableName)
         {
             _logger.LogDebug("listing keys..");
