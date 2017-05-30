@@ -71,13 +71,13 @@ namespace TableSnapper
             return databases;
         }
 
-        private async Task<int> ExecuteNonQueryAsync(string command)
+        public async Task<int> ExecuteNonQueryAsync(string command)
         {
             using (var sqlCommand = new SqlCommand(command, _sqlConnection))
                 return await sqlCommand.ExecuteNonQueryAsync();
         }
 
-        private Task ExecuteQueryReaderAsync(string command, Action<SqlDataReader> callback)
+        public Task ExecuteQueryReaderAsync(string command, Action<SqlDataReader> callback)
         {
             return ExecuteQueryReaderAsync(command, row =>
             {
@@ -86,7 +86,7 @@ namespace TableSnapper
             });
         }
 
-        private Task ExecuteQueryReaderAsync(string command, Func<SqlDataReader, Task> callback)
+        public Task ExecuteQueryReaderAsync(string command, Func<SqlDataReader, Task> callback)
         {
             return ExecuteQueryReaderAsync(command, async row =>
             {
@@ -95,7 +95,7 @@ namespace TableSnapper
             });
         }
 
-        private Task ExecuteQueryReaderAsync(string command, Func<SqlDataReader, bool> callback)
+        public Task ExecuteQueryReaderAsync(string command, Func<SqlDataReader, bool> callback)
         {
             return ExecuteQueryReaderAsync(command, row =>
             {
@@ -104,7 +104,7 @@ namespace TableSnapper
             });
         }
 
-        private async Task ExecuteQueryReaderAsync(string command, Func<SqlDataReader, Task<bool>> callback)
+        public async Task ExecuteQueryReaderAsync(string command, Func<SqlDataReader, Task<bool>> callback)
         {
             using (var sqlCommand = new SqlCommand(command, _sqlConnection))
             using (var reader = await sqlCommand.ExecuteReaderAsync())
@@ -257,7 +257,7 @@ namespace TableSnapper
             return columns;
         }
 
-        public async Task DropTable(string tableName, bool dropReferencingTables = true)
+        public async Task DropTable(string tableName)
         {
             var referencingKeys =
                 (await ListForeignKeysAsync(null))
@@ -265,13 +265,7 @@ namespace TableSnapper
                 .ToList();
 
             if (referencingKeys.Any())
-            {
-                if (!dropReferencingTables)
-                    throw new InvalidOperationException($"This table is referenced by one or more foreign keys.");
-
-                foreach (var key in referencingKeys)
-                    await DropTable(key.TableName);
-            }
+                throw new InvalidOperationException($"This table is referenced by one or more foreign keys.");
 
             await ExecuteNonQueryAsync($"DROP TABLE IF EXISTS {tableName}");
         }

@@ -1,9 +1,11 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
+using TableSnapper.Models;
 
 namespace TableSnapper
 {
@@ -38,14 +40,22 @@ namespace TableSnapper
             foreach (var file in new DirectoryInfo(directory).GetFiles())
                 file.Delete();
 
+            var dict = new Dictionary<Table, string>();
             for (var i = 0; i < tablesA.Length; i++)
             {
                 var table = tablesA[i];
                 var content = await repoA.CloneTableSqlAsync(table);
+                dict[table] = content;
 
                 var path = Path.Combine(directory, $"{i}_{table.Name}.sql");
                 File.WriteAllText(path, content);
             }
+
+            for (var i = tablesA.Length - 1; i >= 0; --i)
+                await repoB.DropTable(tablesA[i].Name);
+
+            foreach (var table in tablesA)
+                await repoB.ExecuteNonQueryAsync(dict[table]);
 
             _logger.LogInformation("Completed");
         }
