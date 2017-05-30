@@ -34,9 +34,9 @@ namespace TableSnapper
             var databaseB = new DatabaseManager(connectionB);
 
             var baseDirectory = Path.Combine(Environment.GetEnvironmentVariable("LocalAppData"), "TableSnapper");
-            var directory = await databaseA.BackupToDirectoryAsync(baseDirectory);
 
-            await databaseB.CloneFromDirectoryAsync(directory);
+            var tables = await databaseA.ListTablesDependentOnAsync("Orders");
+            await databaseA.BackupToDirectoryAsync(baseDirectory, tables);
             
             _logger.LogInformation("Completed");
         }

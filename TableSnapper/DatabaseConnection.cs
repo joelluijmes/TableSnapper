@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Data.Common;
 using System.Data.SqlClient;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -14,6 +15,16 @@ namespace TableSnapper
         private readonly SqlConnection _sqlConnection;
 
         private bool _disposed;
+
+        public DatabaseConnection(DbConnectionStringBuilder sqlBuilder)
+        {
+            _server = sqlBuilder["Server"]?.ToString();
+            _database = sqlBuilder["Database"]?.ToString();
+
+            var connectionString = sqlBuilder.ToString();
+            _sqlConnection = new SqlConnection(connectionString);
+            _logger.LogInformation($"connectionstring: {connectionString}");
+        }
 
         public DatabaseConnection(string server, string database)
         {
@@ -48,7 +59,7 @@ namespace TableSnapper
 
             return repo;
         }
-
+        
         public async Task<int> ExecuteNonQueryAsync(string command)
         {
             using (var sqlCommand = new SqlCommand(command, _sqlConnection))

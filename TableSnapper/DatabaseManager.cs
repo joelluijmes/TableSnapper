@@ -34,10 +34,15 @@ namespace TableSnapper
 
         public async Task<string> BackupToDirectoryAsync(string baseDirectory, bool splitPerTable = true, bool skipData = false)
         {
+            var tables = await ListTablesAsync();
+            return await BackupToDirectoryAsync(baseDirectory, tables, splitPerTable, skipData);
+        }
+
+        public async Task<string> BackupToDirectoryAsync(string baseDirectory, IList<Table> tables, bool splitPerTable = true, bool skipData = false)
+        {
             var directory = Path.Combine(baseDirectory, $"{DateTime.Now:ddMMyy-HHmmss}");
             Directory.CreateDirectory(directory);
 
-            var tables = await ListTablesAsync();
             for (var i = 0; i < tables.Count; i++)
             {
                 var table = tables[i];
@@ -203,15 +208,22 @@ namespace TableSnapper
         {
             if (checkIfTableIsReferenced)
             {
-                var referencingKeys =
-                    (await ListForeignKeysAsync(null))
-                    .Where(key => key.IsForeignKey && key.ForeignTable == tableName);
+                var referencingKeys = await ListTableForeignKeysAsync(null, tableName);
 
                 if (referencingKeys.Any())
                     throw new InvalidOperationException($"This table is referenced by one or more foreign keys.");
             }
 
             await _connection.ExecuteNonQueryAsync($"DROP TABLE IF EXISTS {tableName}");
+        }
+
+        public async Task<Table> GetTableAsync(string tableName)
+        {
+            var columns = await ListColumnsAsync(tableName);
+            var keys = await ListKeysAsync(tableName);
+
+            var table = new Table(tableName, columns, keys, null);
+            return table;
         }
 
         public async Task<List<string>> ListDatabasesAsync()
@@ -234,10 +246,7 @@ namespace TableSnapper
             {
                 var tableName = tableRow["TABLE_NAME"].ToString();
 
-                var columns = await ListColumnsAsync(tableName);
-                var keys = await ListKeysAsync(tableName);
-
-                var table = new Table(tableName, columns, keys, null);
+                var table = await GetTableAsync(tableName);
                 tables.Add(table);
             });
 
@@ -249,6 +258,38 @@ namespace TableSnapper
             var copyTables = tables.ToArray();
             tables = tables.TopologicalSort(left => copyTables.Where(right => left != right && right.Keys.Any(key => key.ForeignTable == left.Name))).ToList();
 
+            return tables;
+        }
+
+        public async Task<List<Table>> ListTablesDependentOnAsync(string tableName)
+        {
+            _logger.LogDebug($"listing dependent tables of {tableName}..");
+            var tables = new List<Table>();
+
+            var foreignKeys = await ListTableForeignKeysAsync(tableName);
+            foreach (var table in foreignKeys.Select(f => f.ForeignTable))
+            {
+                tables.Add(await GetTableAsync(table));
+                tables.AddRange(await ListTablesDependentOnAsync(table));
+            }
+
+            _logger.LogDebug($"found {tables.Count} dependent tables");
+            return tables;
+        }
+
+        public async Task<List<Table>> ListTablesReferencedByAsync(string tableName)
+        {
+            _logger.LogDebug($"listing referenced tables of {tableName}..");
+            var tables = new List<Table>();
+
+            var foreignKeys = await ListTableForeignKeysAsync(null, tableName);
+            foreach (var table in foreignKeys.Select(f => f.TableName))
+            {
+                tables.Add(await GetTableAsync(table));
+                tables.AddRange(await ListTablesReferencedByAsync(table));
+            }
+
+            _logger.LogDebug($"found {tables.Count} referenced tables");
             return tables;
         }
 
@@ -292,35 +333,6 @@ namespace TableSnapper
             return columns;
         }
 
-        private async Task<List<Key>> ListForeignKeysAsync(string tableName)
-        {
-            var query = "SELECT		COL_NAME(fc.parent_object_id, fc.parent_column_id) AS ColumnName,\r\n" +
-                        "           f.name AS KeyName,\r\n" +
-                        "			OBJECT_NAME (f.referenced_object_id) AS ReferenceTableName,\r\n" +
-                        "			COL_NAME(fc.referenced_object_id, fc.referenced_column_id) AS ReferenceColumnName,\r\n" +
-                        "			OBJECT_NAME(f.parent_object_id) AS TableName\r\n" +
-                        "FROM		sys.foreign_keys AS f\r\n" +
-                        "INNER JOIN	sys.foreign_key_columns AS fc\r\n" +
-                        "ON			f.OBJECT_ID = fc.constraint_object_id\r\n" +
-                        (tableName != null ? $"WHERE OBJECT_NAME(f.parent_object_id) = '{tableName}'" : "");
-
-            var keys = new List<Key>();
-            await _connection.ExecuteQueryReaderAsync(query, reader =>
-            {
-                var key = new Key(
-                    reader["TableName"].ToString(),
-                    reader["ColumnName"].ToString(),
-                    reader["KeyName"].ToString(),
-                    reader["ReferenceTableName"].ToString(),
-                    reader["ReferenceColumnName"].ToString()
-                );
-
-                keys.Add(key);
-            });
-
-            return keys;
-        }
-
         private async Task<List<Key>> ListKeysAsync(string tableName)
         {
             _logger.LogDebug("listing keys..");
@@ -331,7 +343,7 @@ namespace TableSnapper
             if (primaryKey != null)
                 keys.Add(primaryKey);
 
-            var foreignKeys = await ListForeignKeysAsync(tableName);
+            var foreignKeys = await ListTableForeignKeysAsync(tableName);
             if (foreignKeys != null)
                 keys.AddRange(foreignKeys);
 
@@ -364,6 +376,36 @@ namespace TableSnapper
             });
 
             return primaryKey;
+        }
+
+        private async Task<List<Key>> ListTableForeignKeysAsync(string tableName, string referencedTableName = null)
+        {
+            var query = "SELECT		COL_NAME(fc.parent_object_id, fc.parent_column_id) AS ColumnName,\r\n" +
+                        "           f.name AS KeyName,\r\n" +
+                        "			OBJECT_NAME (f.referenced_object_id) AS ReferenceTableName,\r\n" +
+                        "			COL_NAME(fc.referenced_object_id, fc.referenced_column_id) AS ReferenceColumnName,\r\n" +
+                        "			OBJECT_NAME(f.parent_object_id) AS TableName\r\n" +
+                        "FROM		sys.foreign_keys AS f\r\n" +
+                        "INNER JOIN	sys.foreign_key_columns AS fc\r\n" +
+                        "ON			f.OBJECT_ID = fc.constraint_object_id" +
+                        (tableName != null ? $"\r\nWHERE OBJECT_NAME(f.parent_object_id) = '{tableName}'" : "") +
+                        (referencedTableName != null ? $"\r\nWHERE OBJECT_NAME(f.referenced_object_id) = '{referencedTableName}'" : "");
+
+            var keys = new List<Key>();
+            await _connection.ExecuteQueryReaderAsync(query, reader =>
+            {
+                var key = new Key(
+                    reader["TableName"].ToString(),
+                    reader["ColumnName"].ToString(),
+                    reader["KeyName"].ToString(),
+                    reader["ReferenceTableName"].ToString(),
+                    reader["ReferenceColumnName"].ToString()
+                );
+
+                keys.Add(key);
+            });
+
+            return keys;
         }
     }
 }
