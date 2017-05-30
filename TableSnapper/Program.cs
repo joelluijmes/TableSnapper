@@ -20,12 +20,19 @@ namespace TableSnapper
 
             var tablesA = (await repoA.ListTablesAsync()).ToArray();
 
-            var sort = tablesA.TopologicalSort(table => tablesA.Where(t => t != table && t.Keys.Any(k => k.ForeignTable == table.Name))).ToArray();
+            var directory = Path.Combine(Environment.GetEnvironmentVariable("LocalAppData"), "TableSnapper");
+            Directory.CreateDirectory(directory);
 
-            foreach (var table in tablesA)
+            foreach (var file in new DirectoryInfo(directory).GetFiles())
+                file.Delete();
+
+            for (var i = 0; i < tablesA.Length; i++)
             {
+                var table = tablesA[i];
                 var content = await repoA.CloneTableSqlAsync(table);
-                File.WriteAllText($"{table.Name}.sql", content);
+
+                var path = Path.Combine(directory, $"{i}_{table.Name}.sql");
+                File.WriteAllText(path, content);
             }
         }
     }

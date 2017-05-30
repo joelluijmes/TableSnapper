@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using TableSnapper.Models;
@@ -69,7 +68,7 @@ namespace TableSnapper
             using (var sqlCommand = new SqlCommand(command, _sqlConnection))
                 return await sqlCommand.ExecuteNonQueryAsync();
         }
-        
+
         private Task ExecuteQueryReaderAsync(string command, Action<SqlDataReader> callback)
         {
             return ExecuteQueryReaderAsync(command, row =>
@@ -103,15 +102,13 @@ namespace TableSnapper
             using (var reader = await sqlCommand.ExecuteReaderAsync())
             {
                 while (await reader.ReadAsync())
-                {
                     // stop if callback returned false
                     if (!await callback(reader))
                         break;
-                }
             }
         }
 
-        public async Task<List<Table>> ListTablesAsync()
+        public async Task<List<Table>> ListTablesAsync(bool sortOnDependency = true)
         {
             var tables = new List<Table>();
 
@@ -125,6 +122,12 @@ namespace TableSnapper
                 var table = new Table(tableName, columns, keys, null);
                 tables.Add(table);
             });
+
+            if (!sortOnDependency)
+                return tables;
+
+            var copyTables = tables.ToArray();
+            tables = tables.TopologicalSort(left => copyTables.Where(right => left != right && right.Keys.Any(key => key.ForeignTable == left.Name))).ToList();
 
             return tables;
         }
@@ -295,7 +298,7 @@ namespace TableSnapper
             // we need to explicity set 'IDENTITY_INSERT' on before we can insert values in a table
             // with a identity column
             var shouldDisableIdentityInsert = table.Columns.Any(c => c.IsIdentity);
-            
+
             if (shouldDisableIdentityInsert)
                 builder.AppendLine($"SET IDENTITY_INSERT {tableName} ON");
 
