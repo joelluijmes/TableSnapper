@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Threading.Tasks;
 using Nito.AsyncEx;
 
@@ -18,12 +19,11 @@ namespace TableSnapper
 
             var tablesA = await repoA.ListTablesAsync();
 
+
             foreach (var table in tablesA)
             {
-                Console.WriteLine(Repository.CreateTableStructureSql(table));
-                Console.WriteLine();
-                Console.WriteLine(await repoA.CloneTableSql(table));
-                Console.WriteLine();
+                var content = await repoA.CloneTableSqlAsync(table);
+                File.WriteAllText($"{table.Name}.sql", content);
             }
         }
     }

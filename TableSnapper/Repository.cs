@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using TableSnapper.Models;
@@ -63,39 +64,40 @@ namespace TableSnapper
             return databases;
         }
 
-        private Task ProcessQueryAsync(string command)
+        private async Task<int> ExecuteNonQueryAsync(string command)
         {
-            return ProcessQueryAsync(command, x => { });
+            using (var sqlCommand = new SqlCommand(command, _sqlConnection))
+                return await sqlCommand.ExecuteNonQueryAsync();
         }
-
-        private Task ProcessQueryAsync(string command, Action<SqlDataReader> callback)
+        
+        private Task ExecuteQueryReaderAsync(string command, Action<SqlDataReader> callback)
         {
-            return ProcessQueryAsync(command, row =>
+            return ExecuteQueryReaderAsync(command, row =>
             {
                 callback(row);
                 return Task.FromResult(true);
             });
         }
 
-        private Task ProcessQueryAsync(string command, Func<SqlDataReader, Task> callback)
+        private Task ExecuteQueryReaderAsync(string command, Func<SqlDataReader, Task> callback)
         {
-            return ProcessQueryAsync(command, async row =>
+            return ExecuteQueryReaderAsync(command, async row =>
             {
                 await callback(row);
                 return true;
             });
         }
 
-        private Task ProcessQueryAsync(string command, Func<SqlDataReader, bool> callback)
+        private Task ExecuteQueryReaderAsync(string command, Func<SqlDataReader, bool> callback)
         {
-            return ProcessQueryAsync(command, row =>
+            return ExecuteQueryReaderAsync(command, row =>
             {
                 var shouldContinue = callback(row);
                 return Task.FromResult(shouldContinue);
             });
         }
 
-        private async Task ProcessQueryAsync(string command, Func<SqlDataReader, Task<bool>> callback)
+        private async Task ExecuteQueryReaderAsync(string command, Func<SqlDataReader, Task<bool>> callback)
         {
             using (var sqlCommand = new SqlCommand(command, _sqlConnection))
             using (var reader = await sqlCommand.ExecuteReaderAsync())
@@ -113,7 +115,7 @@ namespace TableSnapper
         {
             var tables = new List<Table>();
 
-            await ProcessQueryAsync("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES", async tableRow =>
+            await ExecuteQueryReaderAsync("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES", async tableRow =>
             {
                 var tableName = tableRow["TABLE_NAME"].ToString();
 
@@ -138,7 +140,7 @@ namespace TableSnapper
                         (tableName != null ? $"tab.TABLE_NAME = '{tableName}'" : "");
 
             Key primaryKey = null;
-            await ProcessQueryAsync(query, reader =>
+            await ExecuteQueryReaderAsync(query, reader =>
             {
                 primaryKey = new Key(
                     reader["tableName"].ToString(),
@@ -166,7 +168,7 @@ namespace TableSnapper
                         (tableName != null ? $"WHERE OBJECT_NAME(f.parent_object_id) = '{tableName}'" : "");
 
             var keys = new List<Key>();
-            await ProcessQueryAsync(query, reader =>
+            await ExecuteQueryReaderAsync(query, reader =>
             {
                 var key = new Key(
                     reader["TableName"].ToString(),
@@ -214,7 +216,7 @@ namespace TableSnapper
                         "FROM	INFORMATION_SCHEMA.COLUMNS\r\n" +
                         (tableName != null ? $"WHERE TABLE_NAME='{tableName}'" : "");
 
-            await ProcessQueryAsync(query, columnRow =>
+            await ExecuteQueryReaderAsync(query, columnRow =>
             {
                 var column = new Column(
                     columnRow["tableName"].ToString(),
@@ -261,7 +263,7 @@ namespace TableSnapper
                     await DropTable(key.TableName);
             }
 
-            await ProcessQueryAsync($"DROP TABLE IF EXISTS {tableName}");
+            await ExecuteNonQueryAsync($"DROP TABLE IF EXISTS {tableName}");
         }
 
         public async Task SynchronizeWithAsync(Repository inputRepository)
@@ -271,7 +273,7 @@ namespace TableSnapper
             foreach (var table in tables)
             {
                 await DropTable(table.Name);
-                await ProcessQueryAsync(CreateTableStructureSql(table));
+                await ExecuteNonQueryAsync(CloneTableStructureSql(table));
 
                 using (var command = new SqlCommand($"SELECT * FROM {table.Name}", inputRepository._sqlConnection))
                 using (var reader = await command.ExecuteReaderAsync())
@@ -285,7 +287,7 @@ namespace TableSnapper
             }
         }
 
-        public async Task<string> CloneTableSql(Table table)
+        public async Task<string> CloneTableDataSqlAsync(Table table)
         {
             var builder = new StringBuilder();
             var tableName = table.Name;
@@ -297,7 +299,7 @@ namespace TableSnapper
             if (shouldDisableIdentityInsert)
                 builder.AppendLine($"SET IDENTITY_INSERT {tableName} ON");
 
-            await ProcessQueryAsync($"SELECT * FROM {tableName}", reader =>
+            await ExecuteQueryReaderAsync($"SELECT * FROM {tableName}", reader =>
             {
                 builder.Append($"INSERT {tableName} (");
                 builder.Append(table.Columns.Select(c => c.Name).Aggregate((a, b) => $"{a}, {b}"));
@@ -317,7 +319,7 @@ namespace TableSnapper
             return builder.ToString();
         }
 
-        public static string CreateTableStructureSql(Table table)
+        public static string CloneTableStructureSql(Table table)
         {
             var builder = new StringBuilder();
             builder.AppendLine($"CREATE TABLE {table.Name}(");
@@ -366,6 +368,20 @@ namespace TableSnapper
             }
 
             builder.AppendLine(");");
+            return builder.ToString();
+        }
+
+        public async Task<string> CloneTableSqlAsync(Table table)
+        {
+            var builder = new StringBuilder();
+
+            var structureSql = CloneTableStructureSql(table);
+            var dataSql = await CloneTableDataSqlAsync(table);
+
+            builder.AppendLine(structureSql);
+            builder.AppendLine();
+            builder.AppendLine(dataSql);
+
             return builder.ToString();
         }
     }
