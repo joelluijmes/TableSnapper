@@ -4,12 +4,15 @@ using System.Data.SqlClient;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using TableSnapper.Models;
 
 namespace TableSnapper
 {
     internal class Repository : IDisposable
     {
+        private static readonly ILogger _logger = Program.CreateLogger<Repository>();
+
         private readonly string _database;
         private readonly string _server;
         private readonly SqlConnection _sqlConnection;
@@ -23,9 +26,12 @@ namespace TableSnapper
             if (server == null)
                 throw new ArgumentNullException(nameof(server));
 
-            _sqlConnection = new SqlConnection(database == null
+            var connectionString = database == null
                 ? $"Server={server};Trusted_Connection=True;MultipleActiveResultSets=True;"
-                : $"Server={server};Database={database};Trusted_Connection=True;MultipleActiveResultSets=True;");
+                : $"Server={server};Database={database};Trusted_Connection=True;MultipleActiveResultSets=True;";
+            
+            _sqlConnection = new SqlConnection(connectionString);
+            _logger.LogInformation($"connectionstring: {connectionString}");
         }
 
         public void Dispose()
@@ -51,6 +57,7 @@ namespace TableSnapper
 
         public async Task<List<string>> ListDatabasesAsync()
         {
+            _logger.LogDebug("listing databases..");
             var databases = new List<string>();
 
             using (var sqlCommand = new SqlCommand("SELECT name FROM master.dbo.sysdatabases", _sqlConnection))
@@ -60,6 +67,7 @@ namespace TableSnapper
                     databases.Add(reader["name"].ToString());
             }
 
+            _logger.LogDebug($"found {databases.Count} databases");
             return databases;
         }
 
@@ -110,6 +118,7 @@ namespace TableSnapper
 
         public async Task<List<Table>> ListTablesAsync(bool sortOnDependency = true)
         {
+            _logger.LogDebug("listing tables..");
             var tables = new List<Table>();
 
             await ExecuteQueryReaderAsync("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES", async tableRow =>
@@ -122,6 +131,8 @@ namespace TableSnapper
                 var table = new Table(tableName, columns, keys, null);
                 tables.Add(table);
             });
+
+            _logger.LogDebug($"found {tables.Count} tables");
 
             if (!sortOnDependency)
                 return tables;
@@ -183,12 +194,14 @@ namespace TableSnapper
 
                 keys.Add(key);
             });
-
+            
             return keys;
         }
 
         private async Task<List<Key>> ListKeysAsync(string tableName)
         {
+            _logger.LogDebug("listing keys..");
+
             var keys = new List<Key>();
 
             var primaryKey = await ListPrimaryKeyAsync(tableName);
@@ -199,11 +212,14 @@ namespace TableSnapper
             if (foreignKeys != null)
                 keys.AddRange(foreignKeys);
 
+            _logger.LogDebug($"found {keys.Count} keys");
+
             return keys;
         }
 
         private async Task<List<Column>> ListColumnsAsync(string tableName)
         {
+            _logger.LogDebug($"listing columns of {tableName}..");
             var columns = new List<Column>();
 
             var query = "SELECT	COLUMN_NAME as name,\r\n" +
@@ -236,18 +252,9 @@ namespace TableSnapper
 
                 columns.Add(column);
             });
-            return columns;
-        }
 
-        public async Task CopyTableToAsync(string table, Repository targetRepository)
-        {
-            using (var sqlCommand = new SqlCommand($"SELECT * FROM {table}", _sqlConnection))
-            using (var reader = await sqlCommand.ExecuteReaderAsync())
-            using (var bulkCopy = new SqlBulkCopy(targetRepository._sqlConnection))
-            {
-                bulkCopy.DestinationTableName = table;
-                await bulkCopy.WriteToServerAsync(reader);
-            }
+            _logger.LogDebug($"found {columns.Count} columns in {tableName}");
+            return columns;
         }
 
         public async Task DropTable(string tableName, bool dropReferencingTables = true)
@@ -269,29 +276,31 @@ namespace TableSnapper
             await ExecuteNonQueryAsync($"DROP TABLE IF EXISTS {tableName}");
         }
 
-        public async Task SynchronizeWithAsync(Repository inputRepository)
-        {
-            var tables = await inputRepository.ListTablesAsync();
+        //public async Task SynchronizeWithAsync(Repository inputRepository)
+        //{
+        //    var tables = await inputRepository.ListTablesAsync();
 
-            foreach (var table in tables)
-            {
-                await DropTable(table.Name);
-                await ExecuteNonQueryAsync(CloneTableStructureSql(table));
+        //    foreach (var table in tables)
+        //    {
+        //        await DropTable(table.Name);
+        //        await ExecuteNonQueryAsync(CloneTableStructureSql(table));
 
-                using (var command = new SqlCommand($"SELECT * FROM {table.Name}", inputRepository._sqlConnection))
-                using (var reader = await command.ExecuteReaderAsync())
-                using (var bulkCopy = new SqlBulkCopy(_sqlConnection))
-                {
-                    bulkCopy.BatchSize = 500;
-                    bulkCopy.DestinationTableName = table.Name;
+        //        using (var command = new SqlCommand($"SELECT * FROM {table.Name}", inputRepository._sqlConnection))
+        //        using (var reader = await command.ExecuteReaderAsync())
+        //        using (var bulkCopy = new SqlBulkCopy(_sqlConnection))
+        //        {
+        //            bulkCopy.BatchSize = 500;
+        //            bulkCopy.DestinationTableName = table.Name;
 
-                    await bulkCopy.WriteToServerAsync(reader);
-                }
-            }
-        }
+        //            await bulkCopy.WriteToServerAsync(reader);
+        //        }
+        //    }
+        //}
 
         public async Task<string> CloneTableDataSqlAsync(Table table)
         {
+            _logger.LogDebug($"cloning table data of {table}..");
+
             var builder = new StringBuilder();
             var tableName = table.Name;
 
@@ -319,11 +328,14 @@ namespace TableSnapper
             if (shouldDisableIdentityInsert)
                 builder.AppendLine($"SET IDENTITY_INSERT {tableName} OFF");
 
+            _logger.LogDebug($"cloned table data of {table}!");
             return builder.ToString();
         }
 
         public static string CloneTableStructureSql(Table table)
         {
+            _logger.LogDebug($"cloning table structure of {table}..");
+
             var builder = new StringBuilder();
             builder.AppendLine($"CREATE TABLE {table.Name}(");
 
@@ -371,11 +383,14 @@ namespace TableSnapper
             }
 
             builder.AppendLine(");");
+
+            _logger.LogDebug($"cloned table structure of {table}!");
             return builder.ToString();
         }
 
         public async Task<string> CloneTableSqlAsync(Table table)
         {
+            _logger.LogDebug($"cloning full table {table}..");
             var builder = new StringBuilder();
 
             var structureSql = CloneTableStructureSql(table);
@@ -385,6 +400,7 @@ namespace TableSnapper
             builder.AppendLine();
             builder.AppendLine(dataSql);
 
+            _logger.LogDebug($"cloned full table {table}!");
             return builder.ToString();
         }
     }
