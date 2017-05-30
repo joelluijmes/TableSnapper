@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -30,7 +31,34 @@ namespace TableSnapper
             _disposed = true;
         }
 
-        public async Task CloneFromAsync(DatabaseManager otherDatabase, bool structureOnly = false)
+        public async Task BackupToFileAsync(string directory, bool splitPerTable = true, bool skipData = false)
+        {
+            directory = Path.Combine(directory, $"{DateTime.Now:ddMMyy-HHmmss}");
+            Directory.CreateDirectory(directory);
+
+            var tables = await ListTablesAsync();
+            for (var i = 0; i < tables.Count; i++)
+            {
+                var table = tables[i];
+
+                var clone = skipData
+                    ? CloneTableStructureSql(table)
+                    : await CloneTableSqlAsync(table);
+
+                if (splitPerTable)
+                {
+                    var path = Path.Combine(directory, $"{i}_{table.Name}.sql");
+                    File.WriteAllText(path, clone);
+                }
+                else
+                {
+                    var path = Path.Combine(directory, "backup.sql");
+                    File.AppendAllText(path, clone);
+                }
+            }
+        }
+
+        public async Task CloneFromAsync(DatabaseManager otherDatabase, bool skipData = false)
         {
             var tables = await otherDatabase.ListTablesAsync();
 
@@ -40,7 +68,7 @@ namespace TableSnapper
 
             foreach (var table in tables)
             {
-                var clone = structureOnly
+                var clone = skipData
                     ? otherDatabase.CloneTableStructureSql(table)
                     : await otherDatabase.CloneTableSqlAsync(table);
 
