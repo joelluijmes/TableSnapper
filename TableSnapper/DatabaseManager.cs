@@ -226,6 +226,20 @@ namespace TableSnapper
             return table;
         }
 
+        public async Task<List<string>> ListSchemasAsync()
+        {
+            _logger.LogDebug("listing schemas..");
+            var databases = new List<string>();
+
+            await _connection.ExecuteQueryReaderAsync("SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA", reader =>
+            {
+                databases.Add(reader["SCHEMA_NAME"].ToString());
+            });
+
+            _logger.LogDebug($"found {databases.Count} schemas");
+            return databases;
+        }
+
         public async Task<List<string>> ListDatabasesAsync()
         {
             _logger.LogDebug("listing databases..");
