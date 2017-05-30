@@ -22,9 +22,9 @@ namespace TableSnapper
             {
                 Console.WriteLine(Repository.CreateTableStructureSql(table));
                 Console.WriteLine();
+                Console.WriteLine(await repoA.CloneTableSql(table));
+                Console.WriteLine();
             }
-
-            await repoB.SynchronizeWithAsync(repoA);
         }
     }
 }

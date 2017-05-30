@@ -101,9 +101,11 @@ namespace TableSnapper
             using (var reader = await sqlCommand.ExecuteReaderAsync())
             {
                 while (await reader.ReadAsync())
+                {
                     // stop if callback returned false
                     if (!await callback(reader))
                         break;
+                }
             }
         }
 
@@ -281,6 +283,38 @@ namespace TableSnapper
                     await bulkCopy.WriteToServerAsync(reader);
                 }
             }
+        }
+
+        public async Task<string> CloneTableSql(Table table)
+        {
+            var builder = new StringBuilder();
+            var tableName = table.Name;
+
+            // we need to explicity set 'IDENTITY_INSERT' on before we can insert values in a table
+            // with a identity column
+            var shouldDisableIdentityInsert = table.Keys.Any(k => k.IsPrimaryKey);
+            
+            if (shouldDisableIdentityInsert)
+                builder.AppendLine($"SET IDENTITY_INSERT {tableName} ON");
+
+            await ProcessQueryAsync($"SELECT * FROM {tableName}", reader =>
+            {
+                builder.Append($"INSERT {tableName} (");
+                builder.Append(table.Columns.Select(c => c.Name).Aggregate((a, b) => $"{a}, {b}"));
+                builder.Append(") VALUES (");
+                builder.Append(Enumerable
+                    .Range(0, reader.FieldCount)
+                    .Select(i => $"'{reader[i]}'")
+                    .Aggregate((a, b) => $"{a}, {b}")
+                );
+
+                builder.AppendLine(")");
+            });
+
+            if (shouldDisableIdentityInsert)
+                builder.AppendLine($"SET IDENTITY_INSERT {tableName} OFF");
+
+            return builder.ToString();
         }
 
         public static string CreateTableStructureSql(Table table)
