@@ -28,5 +28,6 @@ namespace TableSnapper.Models
         public bool IsIdentity { get; }
 
         public override string ToString() => $"{TableName}:{Name} ({DataTypeName})";
+        
     }
 }
