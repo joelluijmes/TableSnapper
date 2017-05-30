@@ -137,15 +137,17 @@ namespace TableSnapper
             return builder.ToString();
         }
 
-        public async Task DropTable(string tableName)
+        public async Task DropTableAsync(string tableName, bool checkIfTableIsReferenced = false)
         {
-            var referencingKeys =
-                (await ListForeignKeysAsync(null))
-                .Where(key => key.IsForeignKey && key.ForeignTable == tableName)
-                .ToList();
+            if (checkIfTableIsReferenced)
+            {
+                var referencingKeys =
+                    (await ListForeignKeysAsync(null))
+                    .Where(key => key.IsForeignKey && key.ForeignTable == tableName);
 
-            if (referencingKeys.Any())
-                throw new InvalidOperationException($"This table is referenced by one or more foreign keys.");
+                if (referencingKeys.Any())
+                    throw new InvalidOperationException($"This table is referenced by one or more foreign keys.");
+            }
 
             await _connection.ExecuteNonQueryAsync($"DROP TABLE IF EXISTS {tableName}");
         }
@@ -186,6 +188,21 @@ namespace TableSnapper
             tables = tables.TopologicalSort(left => copyTables.Where(right => left != right && right.Keys.Any(key => key.ForeignTable == left.Name))).ToList();
 
             return tables;
+        }
+
+        public async Task CloneFromAsync(DatabaseManager otherDatabase)
+        {
+            var tables = await otherDatabase.ListTablesAsync();
+
+            // tables is sorted on dependency, so we delete the tables in reverse
+            for (var i = tables.Count - 1; i >= 0; --i)
+                await DropTableAsync(tables[i].Name);
+
+            foreach (var table in tables)
+            {
+                var clone = await otherDatabase.CloneTableSqlAsync(table);
+                await _connection.ExecuteNonQueryAsync(clone);
+            }
         }
 
         private async Task<List<Column>> ListColumnsAsync(string tableName)
@@ -256,8 +273,7 @@ namespace TableSnapper
 
             return keys;
         }
-
-
+        
         private async Task<List<Key>> ListKeysAsync(string tableName)
         {
             _logger.LogDebug("listing keys..");

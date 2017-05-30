@@ -33,32 +33,31 @@ namespace TableSnapper
             var connectionB = await DatabaseConnection.CreateConnectionAsync("localhost", "TestB");
             var databaseB = new DatabaseManager(connectionB);
 
-            var tablesA = (await databaseA.ListTablesAsync()).ToArray();
-            _logger.LogTrace($"{tablesA.Length} tables");
+            await databaseB.CloneFromAsync(databaseA);
 
-            var directory = Path.Combine(Environment.GetEnvironmentVariable("LocalAppData"), "TableSnapper");
-            Directory.CreateDirectory(directory);
-            _logger.LogTrace($"output path '{directory}'");
+            //var directory = Path.Combine(Environment.GetEnvironmentVariable("LocalAppData"), "TableSnapper");
+            //Directory.CreateDirectory(directory);
+            //_logger.LogTrace($"output path '{directory}'");
 
-            foreach (var file in new DirectoryInfo(directory).GetFiles())
-                file.Delete();
+            //foreach (var file in new DirectoryInfo(directory).GetFiles())
+            //    file.Delete();
 
-            var dict = new Dictionary<Table, string>();
-            for (var i = 0; i < tablesA.Length; i++)
-            {
-                var table = tablesA[i];
-                var content = await databaseA.CloneTableSqlAsync(table);
-                dict[table] = content;
+            //var dict = new Dictionary<Table, string>();
+            //for (var i = 0; i < tablesA.Length; i++)
+            //{
+            //    var table = tablesA[i];
+            //    var content = await databaseA.CloneTableSqlAsync(table);
+            //    dict[table] = content;
 
-                var path = Path.Combine(directory, $"{i}_{table.Name}.sql");
-                File.WriteAllText(path, content);
-            }
+            //    var path = Path.Combine(directory, $"{i}_{table.Name}.sql");
+            //    File.WriteAllText(path, content);
+            //}
 
-            for (var i = tablesA.Length - 1; i >= 0; --i)
-                await databaseB.DropTable(tablesA[i].Name);
+            //for (var i = tablesA.Length - 1; i >= 0; --i)
+            //    await databaseB.DropTableAsync(tablesA[i].Name);
 
-            foreach (var table in tablesA)
-                await connectionB.ExecuteNonQueryAsync(dict[table]);
+            //foreach (var table in tablesA)
+            //    await connectionB.ExecuteNonQueryAsync(dict[table]);
 
             _logger.LogInformation("Completed");
         }
