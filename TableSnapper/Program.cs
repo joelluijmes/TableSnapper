@@ -27,10 +27,13 @@ namespace TableSnapper
         {
             _logger.LogInformation("Started");
 
-            var repoA = await Repository.OpenDatabaseAsync("localhost", "TestA");
-            var repoB = await Repository.OpenDatabaseAsync("localhost", "TestB");
+            var connectionA = await DatabaseConnection.CreateConnectionAsync("localhost", "TestA");
+            var databaseA = new DatabaseManager(connectionA);
 
-            var tablesA = (await repoA.ListTablesAsync()).ToArray();
+            var connectionB = await DatabaseConnection.CreateConnectionAsync("localhost", "TestB");
+            var databaseB = new DatabaseManager(connectionB);
+
+            var tablesA = (await databaseA.ListTablesAsync()).ToArray();
             _logger.LogTrace($"{tablesA.Length} tables");
 
             var directory = Path.Combine(Environment.GetEnvironmentVariable("LocalAppData"), "TableSnapper");
@@ -44,7 +47,7 @@ namespace TableSnapper
             for (var i = 0; i < tablesA.Length; i++)
             {
                 var table = tablesA[i];
-                var content = await repoA.CloneTableSqlAsync(table);
+                var content = await databaseA.CloneTableSqlAsync(table);
                 dict[table] = content;
 
                 var path = Path.Combine(directory, $"{i}_{table.Name}.sql");
@@ -52,10 +55,10 @@ namespace TableSnapper
             }
 
             for (var i = tablesA.Length - 1; i >= 0; --i)
-                await repoB.DropTable(tablesA[i].Name);
+                await databaseB.DropTable(tablesA[i].Name);
 
             foreach (var table in tablesA)
-                await repoB.ExecuteNonQueryAsync(dict[table]);
+                await connectionB.ExecuteNonQueryAsync(dict[table]);
 
             _logger.LogInformation("Completed");
         }
