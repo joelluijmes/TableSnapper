@@ -21,7 +21,9 @@ namespace TableSnapper
             _server = sqlBuilder["Server"]?.ToString();
             _database = sqlBuilder["Database"]?.ToString();
 
-            var connectionString = sqlBuilder.ToString();
+            sqlBuilder["MultipleActiveResultSets"] = true;
+
+            var connectionString = sqlBuilder.ConnectionString;
             _sqlConnection = new SqlConnection(connectionString);
             _logger.LogInformation($"connectionstring: {connectionString}");
         }
@@ -50,6 +52,14 @@ namespace TableSnapper
             _disposed = true;
         }
 
+        public static async Task<DatabaseConnection> CreateConnectionAsync(SqlConnectionStringBuilder connectionBuilder)
+        {
+            var repo = new DatabaseConnection(connectionBuilder);
+            await repo.OpenAsync();
+
+            return repo;
+        }
+
         public static Task<DatabaseConnection> CreateConnectionAsync(string server) => CreateConnectionAsync(server, null);
 
         public static async Task<DatabaseConnection> CreateConnectionAsync(string server, string database)
@@ -59,7 +69,7 @@ namespace TableSnapper
 
             return repo;
         }
-        
+
         public async Task<int> ExecuteNonQueryAsync(string command)
         {
             using (var sqlCommand = new SqlCommand(command, _sqlConnection))

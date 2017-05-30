@@ -323,7 +323,7 @@ namespace TableSnapper
                     columnRow.GetNullableInt("characterMaximumLength"),
                     columnRow.GetNullableInt("numericPrecision"),
                     columnRow.GetNullableInt("numericScale"),
-                    columnRow.GetInt32(columnRow.GetOrdinal("isIdentity")) == 1
+                    columnRow.GetNullableInt("isIdentity") == 1
                 );
 
                 columns.Add(column);
