@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Nito.AsyncEx;
 
@@ -17,8 +18,9 @@ namespace TableSnapper
             var repoA = await Repository.OpenDatabaseAsync("localhost", "TestA");
             var repoB = await Repository.OpenDatabaseAsync("localhost", "TestB");
 
-            var tablesA = await repoA.ListTablesAsync();
+            var tablesA = (await repoA.ListTablesAsync()).ToArray();
 
+            var sort = tablesA.TopologicalSort(table => tablesA.Where(t => t != table && t.Keys.Any(k => k.ForeignTable == table.Name))).ToArray();
 
             foreach (var table in tablesA)
             {

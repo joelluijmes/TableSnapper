@@ -6,6 +6,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="Customers.sql" />
+    <None Remove="Orders.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Nito.AsyncEx.Context" Version="1.1.0" />
     <PackageReference Include="System.Data.SqlClient" Version="4.3.1" />
     <PackageReference Include="System.Reactive.Linq" Version="3.1.1" />
