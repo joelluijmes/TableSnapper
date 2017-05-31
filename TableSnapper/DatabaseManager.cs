@@ -20,7 +20,7 @@ namespace TableSnapper
 
         private bool _disposed;
 
-        public DatabaseManager(DatabaseConnection connection, string schemaName, bool disposeConnection = true)
+        public DatabaseManager(DatabaseConnection connection, string schemaName = null, bool disposeConnection = true)
         {
             _connection = connection;
             _schemaName = schemaName;
@@ -40,11 +40,11 @@ namespace TableSnapper
 
         public async Task<string> BackupToDirectoryAsync(string baseDirectory, string schemaName = null, bool splitPerTable = true, bool skipData = false)
         {
-            var tables = await QueryTablesAsync();
-            return await BackupToDirectoryAsync(baseDirectory, tables, schemaName, splitPerTable, skipData);
+            var tables = await QueryTablesAsync(schemaName);
+            return await BackupToDirectoryAsync(baseDirectory, tables, splitPerTable, skipData);
         }
 
-        public async Task<string> BackupToDirectoryAsync(string baseDirectory, IList<Table> tables, string schemaName = null, bool splitPerTable = true, bool skipData = false)
+        public async Task<string> BackupToDirectoryAsync(string baseDirectory, IList<Table> tables, bool splitPerTable = true, bool skipData = false)
         {
             var directory = Path.Combine(baseDirectory, $"{DateTime.Now:ddMMyy-HHmmss}");
             Directory.CreateDirectory(directory);
@@ -59,7 +59,7 @@ namespace TableSnapper
 
                 if (splitPerTable)
                 {
-                    var path = Path.Combine(directory, $"{i + 1}_{schemaName ?? _schemaName}_{table.Name}.sql");
+                    var path = Path.Combine(directory, $"{i + 1}_{table.SchemaName}_{table.Name}.sql");
                     File.WriteAllText(path, clone);
                 }
                 else
@@ -74,11 +74,11 @@ namespace TableSnapper
 
         public async Task CloneFromAsync(DatabaseManager otherDatabase, string schemaName = null, bool skipData = false)
         {
-            var tables = await otherDatabase.QueryTablesAsync();
+            var tables = await otherDatabase.QueryTablesAsync(schemaName);
 
             // tables is sorted on dependency, so we delete the tables in reverse
             for (var i = tables.Count - 1; i >= 0; --i)
-                await DropTableAsync(tables[i].Name);
+                await DropTableAsync(tables[i].Name, schemaName);
 
             foreach (var table in tables)
             {
@@ -119,7 +119,7 @@ namespace TableSnapper
             if (shouldDisableIdentityInsert)
                 builder.AppendLine($"SET IDENTITY_INSERT [SCHEMA_NAME].{table.Name} ON");
 
-            await _connection.ExecuteQueryReaderAsync($"SELECT * FROM {table.Name}", reader =>
+            await _connection.ExecuteQueryReaderAsync($"SELECT * FROM {table.SchemaName}.{table.Name}", reader =>
             {
                 builder.Append($"INSERT [SCHEMA_NAME].{table.Name} (");
                 builder.Append(table.Columns.Select(c => c.Name).Aggregate((a, b) => $"{a}, {b}"));
@@ -278,10 +278,12 @@ namespace TableSnapper
 
         public async Task<Table> QueryTableAsync(string tableName, string schemaName = null)
         {
-            var columns = await QueryColumnsAsync(tableName);
-            var keys = await QueryKeysAsync(tableName);
+            schemaName = schemaName ?? _schemaName;
 
-            var table = new Table(schemaName ?? _schemaName, tableName, columns, keys, null);
+            var columns = await QueryColumnsAsync(tableName, schemaName);
+            var keys = await QueryKeysAsync(tableName, schemaName);
+
+            var table = new Table(schemaName, tableName, columns, keys, null);
             return table;
         }
 
@@ -306,7 +308,7 @@ namespace TableSnapper
                 var tableName = tableRow["TABLE_NAME"].ToString();
                 var schema = tableRow["TABLE_SCHEMA"].ToString();
 
-                var table = await QueryTableAsync(tableName);
+                var table = await QueryTableAsync(tableName, schema);
                 tables.Add(table);
             });
 
@@ -323,13 +325,13 @@ namespace TableSnapper
             _logger.LogDebug($"listing dependent tables of {tableName}..");
             var tables = new List<Table>();
 
-            var foreignKeys = await QueryTableForeignKeysAsync(tableName);
-            foreach (var table in foreignKeys.Select(f => f.ForeignTable))
+            var foreignKeys = await QueryTableForeignKeysAsync(tableName, schemaName);
+            foreach (var key in foreignKeys)
             {
-                tables.Add(await QueryTableAsync(table));
+                tables.Add(await QueryTableAsync(key.ForeignTable, key.ForeignSchemaName));
 
                 if (descendReferencedTables)
-                    tables.AddRange(await QueryTablesReferencedByAsync(table));
+                    tables.AddRange(await QueryTablesReferencedByAsync(key.ForeignTable, key.ForeignSchemaName));
             }
 
             _logger.LogDebug($"found {tables.Count} dependent tables");
