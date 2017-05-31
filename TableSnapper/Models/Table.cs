@@ -19,6 +19,6 @@ namespace TableSnapper.Models
         public List<Key> Keys { get; }
         public List<Constraint> Constraints { get; }
 
-        public override string ToString() => Name;
+        public override string ToString() => $"{SchemaName}.{Name}";
     }
 }

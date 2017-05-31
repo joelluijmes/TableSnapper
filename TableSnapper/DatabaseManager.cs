@@ -86,7 +86,7 @@ namespace TableSnapper
                     ? otherDatabase.CloneTableStructureSql(table)
                     : await otherDatabase.CloneTableSqlAsync(table);
 
-                clone = clone.Replace("[SCHEMA_NAME]", $"{schemaName ?? _schemaName}");
+                // clone = clone.Replace("[SCHEMA_NAME]", $"{schemaName ?? _schemaName}");
                 await _connection.ExecuteNonQueryAsync(clone);
             }
         }
@@ -101,7 +101,7 @@ namespace TableSnapper
             {
                 var content = File.ReadAllText(file);
 
-                content = content.Replace("[SCHEMA_NAME]", $"{schemaName ?? _schemaName}");
+                // content = content.Replace("[SCHEMA_NAME]", $"{schemaName ?? _schemaName}");
                 await _connection.ExecuteNonQueryAsync(content);
             }
         }
@@ -117,11 +117,11 @@ namespace TableSnapper
             var shouldDisableIdentityInsert = table.Columns.Any(c => c.IsIdentity);
 
             if (shouldDisableIdentityInsert)
-                builder.AppendLine($"SET IDENTITY_INSERT [SCHEMA_NAME].{table.Name} ON");
+                builder.AppendLine($"SET IDENTITY_INSERT {table.SchemaName}.{table.Name} ON");
 
             await _connection.ExecuteQueryReaderAsync($"SELECT * FROM {table.SchemaName}.{table.Name}", reader =>
             {
-                builder.Append($"INSERT [SCHEMA_NAME].{table.Name} (");
+                builder.Append($"INSERT {table.SchemaName}.{table.Name} (");
                 builder.Append(table.Columns.Select(c => c.Name).Aggregate((a, b) => $"{a}, {b}"));
                 builder.Append(") VALUES (");
                 builder.Append(Enumerable
@@ -134,7 +134,7 @@ namespace TableSnapper
             });
 
             if (shouldDisableIdentityInsert)
-                builder.AppendLine($"SET IDENTITY_INSERT [SCHEMA_NAME].{table.Name} OFF");
+                builder.AppendLine($"SET IDENTITY_INSERT {table.SchemaName}.{table.Name} OFF");
 
             _logger.LogDebug($"cloned table data of {table}!");
             return builder.ToString();
@@ -161,7 +161,7 @@ namespace TableSnapper
             _logger.LogDebug($"cloning table structure of {table}..");
 
             var builder = new StringBuilder();
-            builder.AppendLine($"CREATE TABLE [SCHEMA_NAME].{table.Name}(");
+            builder.AppendLine($"CREATE TABLE {table.SchemaName}.{table.Name}(");
 
             var primaryKey = table.Keys.SingleOrDefault(key => key.IsPrimaryKey);
             var foreignKeys = table.Keys.Where(key => key.IsForeignKey).ToList();
@@ -200,7 +200,7 @@ namespace TableSnapper
 
                 var foreignKey = foreignKeys.SingleOrDefault(key => key.Column == column.Name);
                 if (foreignKey != null)
-                    builder.Append($" REFERENCES [SCHEMA_NAME].{foreignKey.ForeignTable}({foreignKey.ForeignColumn})");
+                    builder.Append($" REFERENCES {foreignKey.ForeignSchemaName}.{foreignKey.ForeignTable}({foreignKey.ForeignColumn})");
 
                 // add the , if not last column
                 builder.AppendLine(i < table.Columns.Count - 1 ? "," : "");
@@ -335,7 +335,7 @@ namespace TableSnapper
             }
 
             _logger.LogDebug($"found {tables.Count} dependent tables");
-            return tables;
+            return SortTables(tables);
         }
 
         //public async Task<List<Table>> QueryTablesReferencedByAsync(string tableName, string schemaName = null)
@@ -496,6 +496,8 @@ namespace TableSnapper
 
             return keys;
         }
+
+        private static List<Table> SortTables(List<Table> tables) => SortTables(true, tables);
 
         private static List<Table> SortTables(bool sortOnDependency, List<Table> tables)
         {
