@@ -312,7 +312,7 @@ namespace TableSnapper
             return SortTables(sortOnDependency, tables);
         }
 
-        public async Task<List<Table>> QueryTablesDependentOnAsync(string tableName)
+        public async Task<List<Table>> QueryTablesReferencedByAsync(string tableName, bool descendReferencedTables = true)
         {
             _logger.LogDebug($"listing dependent tables of {tableName}..");
             var tables = new List<Table>();
@@ -321,28 +321,30 @@ namespace TableSnapper
             foreach (var table in foreignKeys.Select(f => f.ForeignTable))
             {
                 tables.Add(await QueryTableAsync(table));
-                tables.AddRange(await QueryTablesDependentOnAsync(table));
+
+                if (descendReferencedTables)
+                    tables.AddRange(await QueryTablesReferencedByAsync(table));
             }
 
             _logger.LogDebug($"found {tables.Count} dependent tables");
             return tables;
         }
 
-        public async Task<List<Table>> QueryTablesReferencedByAsync(string tableName)
-        {
-            _logger.LogDebug($"listing referenced tables of {tableName}..");
-            var tables = new List<Table>();
+        //public async Task<List<Table>> QueryTablesReferencedByAsync(string tableName)
+        //{
+        //    _logger.LogDebug($"listing referenced tables of {tableName}..");
+        //    var tables = new List<Table>();
 
-            var foreignKeys = await QueryTableForeignKeysAsync(null, tableName);
-            foreach (var table in foreignKeys.Select(f => f.TableName))
-            {
-                tables.Add(await QueryTableAsync(table));
-                tables.AddRange(await QueryTablesReferencedByAsync(table));
-            }
+        //    var foreignKeys = await QueryTableForeignKeysAsync(null, tableName);
+        //    foreach (var table in foreignKeys.Select(f => f.TableName))
+        //    {
+        //        tables.Add(await QueryTableAsync(table));
+        //        tables.AddRange(await QueryTablesReferencedByAsync(table));
+        //    }
 
-            _logger.LogDebug($"found {tables.Count} referenced tables");
-            return tables;
-        }
+        //    _logger.LogDebug($"found {tables.Count} referenced tables");
+        //    return tables;
+        //}
 
         private async Task<List<Column>> QueryColumnsAsync(string tableName)
         {
@@ -464,9 +466,9 @@ namespace TableSnapper
                     reader["TableName"].ToString(),
                     reader["ColumnName"].ToString(),
                     reader["KeyName"].ToString(),
+                    reader["ReferenceSchemaName"].ToString(),
                     reader["ReferenceTableName"].ToString(),
-                    reader["ReferenceColumnName"].ToString(),
-                    reader["ReferenceSchemaName"].ToString()
+                    reader["ReferenceColumnName"].ToString()
                 );
 
                 keys.Add(key);
