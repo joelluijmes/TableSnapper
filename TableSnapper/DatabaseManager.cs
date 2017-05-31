@@ -124,12 +124,37 @@ namespace TableSnapper
                 builder.Append($"INSERT {table.SchemaName}.{table.Name} (");
                 builder.Append(table.Columns.Select(c => c.Name).Aggregate((a, b) => $"{a}, {b}"));
                 builder.Append(") VALUES (");
-                builder.Append(Enumerable
-                    .Range(0, reader.FieldCount)
-                    .Select(i => $"'{reader[i]}'")
-                    .Aggregate((a, b) => $"{a}, {b}")
-                );
 
+                for (var i = 0; i < reader.FieldCount; ++i)
+                {
+                    if (reader.IsDBNull(i))
+                    {
+                        builder.Append("NULL");
+                    }
+                    else
+                    {
+                        switch (reader[i])
+                        {
+                        case byte[] bytes:
+                            var hexString = bytes.Select(x => x.ToString("X2")).Aggregate("0x", (a, b) => $"{a}{b}");
+                            var length = table.Columns[i].CharacterMaximumLength;
+
+                            builder.Append($"CONVERT(varbinary({(length == -1 ? "MAX" : length.ToString())}), '{hexString}')");
+                            break;
+
+                        case Guid guid:
+                                builder.Append($"CONVERT(uniqueidentifier, '{guid}')");
+                                break;
+                        default:
+                            builder.Append($"'{reader[i]}'");
+                            break;
+                        }
+                    }
+
+                    if (i < reader.FieldCount - 1)
+                        builder.Append(", ");
+                }
+                        
                 builder.AppendLine(")");
             });
 
@@ -172,7 +197,11 @@ namespace TableSnapper
                 // COLUMN
                 builder.Append($"  {column.Name} {column.DataTypeName} ");
                 if (column.CharacterMaximumLength.HasValue)
-                    builder.Append($"({column.CharacterMaximumLength}) ");
+                {
+                    builder.Append(column.CharacterMaximumLength == -1 
+                        ? "(max)" 
+                        : $"({column.CharacterMaximumLength}) ");
+                }
 
                 if (column.DataTypeName == "decimal")
                 {
