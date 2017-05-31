@@ -381,6 +381,19 @@ namespace TableSnapper
 
         public static bool operator !=(DatabaseManager left, DatabaseManager right) => !Equals(left, right);
 
+        public async Task<bool> QuerySchemaExistsAsync(string schemaName = null)
+        {
+            var query = SqlQueryBuilder
+                .FromString("SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA")
+                .Where("SCHEMA_NAME", schemaName ?? _schemaName)
+                .ToString();
+
+            var anyRow = false;
+            await _connection.ExecuteQueryReaderAsync(query, x => { anyRow = true; });
+
+            return anyRow;
+        }
+
         public async Task<bool> QueryTableExistsAsync(string tableName, string schemaName = null)
         {
             var query = SqlQueryBuilder
