@@ -16,33 +16,19 @@ namespace TableSnapper
 
         private bool _disposed;
 
-        public DatabaseConnection(DbConnectionStringBuilder sqlBuilder)
+        public DatabaseConnection(SqlConnectionStringBuilder sqlBuilder)
         {
-            _server = sqlBuilder["Server"]?.ToString();
-            _database = sqlBuilder["Database"]?.ToString();
+            _server = sqlBuilder.DataSource;
+            _database = sqlBuilder.InitialCatalog;
 
-            sqlBuilder["MultipleActiveResultSets"] = true;
+            sqlBuilder.MultipleActiveResultSets = true;
 
             var connectionString = sqlBuilder.ConnectionString;
-            _sqlConnection = new SqlConnection(connectionString);
             _logger.LogInformation($"connectionstring: {connectionString}");
-        }
-
-        public DatabaseConnection(string server, string database)
-        {
-            _server = server;
-            _database = database;
-            if (server == null)
-                throw new ArgumentNullException(nameof(server));
-
-            var connectionString = database == null
-                ? $"Server={server};Trusted_Connection=True;MultipleActiveResultSets=True;"
-                : $"Server={server};Database={database};Trusted_Connection=True;MultipleActiveResultSets=True;";
 
             _sqlConnection = new SqlConnection(connectionString);
-            _logger.LogInformation($"connectionstring: {connectionString}");
         }
-
+        
         public void Dispose()
         {
             if (_disposed)
@@ -64,7 +50,31 @@ namespace TableSnapper
 
         public static async Task<DatabaseConnection> CreateConnectionAsync(string server, string database)
         {
-            var repo = new DatabaseConnection(server, database);
+            var connectionBuilder = new SqlConnectionStringBuilder
+            {
+                DataSource = server,
+                InitialCatalog = database,
+                IntegratedSecurity = true
+            };
+
+            var repo = new DatabaseConnection(connectionBuilder);
+            await repo.OpenAsync();
+
+            return repo;
+        }
+
+        public static async Task<DatabaseConnection> CreateConnectionAsync(string server, string database, string username, string password)
+        {
+            var connectionBuilder = new SqlConnectionStringBuilder
+            {
+                DataSource = server,
+                UserID = username,
+                Password = password,
+                InitialCatalog = database,
+                IntegratedSecurity = false
+            };
+
+            var repo = new DatabaseConnection(connectionBuilder);
             await repo.OpenAsync();
 
             return repo;

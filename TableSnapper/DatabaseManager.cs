@@ -40,7 +40,7 @@ namespace TableSnapper
 
         public async Task<string> BackupToDirectoryAsync(string baseDirectory, bool splitPerTable = true, bool skipData = false)
         {
-            var tables = await ListTablesAsync();
+            var tables = await QueryTablesAsync();
             return await BackupToDirectoryAsync(baseDirectory, tables, splitPerTable, skipData);
         }
 
@@ -74,7 +74,7 @@ namespace TableSnapper
 
         public async Task CloneFromAsync(DatabaseManager otherDatabase, bool skipData = false)
         {
-            var tables = await otherDatabase.ListTablesAsync();
+            var tables = await otherDatabase.QueryTablesAsync();
 
             // tables is sorted on dependency, so we delete the tables in reverse
             for (var i = tables.Count - 1; i >= 0; --i)
@@ -216,7 +216,7 @@ namespace TableSnapper
         {
             if (checkIfTableIsReferenced)
             {
-                var referencingKeys = await ListTableForeignKeysAsync(null, tableName);
+                var referencingKeys = await QueryTableForeignKeysAsync(null, tableName);
 
                 if (referencingKeys.Any())
                     throw new InvalidOperationException($"This table is referenced by one or more foreign keys.");
@@ -225,24 +225,7 @@ namespace TableSnapper
             await _connection.ExecuteNonQueryAsync($"DROP TABLE IF EXISTS {_schemaName}.{tableName}");
         }
 
-        public static async Task<string> GetDefaultSchema(DatabaseConnection connection)
-        {
-            string schema = null;
-            await connection.ExecuteQueryReaderAsync("SELECT SCHEMA_NAME()", reader => { schema = reader[0].ToString(); });
-
-            return schema;
-        }
-
-        public async Task<Table> GetTableAsync(string tableName)
-        {
-            var columns = await ListColumnsAsync(tableName);
-            var keys = await ListKeysAsync(tableName);
-
-            var table = new Table(_schemaName, tableName, columns, keys, null);
-            return table;
-        }
-
-        public static async Task<List<string>> ListDatabasesAsync(DatabaseConnection connection)
+        public static async Task<List<string>> GetDatabasesAsync(DatabaseConnection connection)
         {
             _logger.LogDebug("listing databases..");
             var databases = new List<string>();
@@ -253,7 +236,15 @@ namespace TableSnapper
             return databases;
         }
 
-        public static async Task<List<string>> ListSchemasAsync(DatabaseConnection connection)
+        public static async Task<string> GetDefaultSchema(DatabaseConnection connection)
+        {
+            string schema = null;
+            await connection.ExecuteQueryReaderAsync("SELECT SCHEMA_NAME()", reader => { schema = reader[0].ToString(); });
+
+            return schema;
+        }
+
+        public static async Task<List<string>> GetSchemasAsync(DatabaseConnection connection)
         {
             _logger.LogDebug("listing schemas..");
             var databases = new List<string>();
@@ -264,7 +255,34 @@ namespace TableSnapper
             return databases;
         }
 
-        public async Task<List<Table>> ListTablesAsync(bool sortOnDependency = true)
+        public async Task<List<string>> GetTablesAsync()
+        {
+            var query = SqlQueryBuilder
+                .FromString("SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
+                .Where("TABLE_SCHEMA", _schemaName)
+                .ToString();
+
+            var tables = new List<string>();
+            await _connection.ExecuteQueryReaderAsync(query, tableRow =>
+            {
+                var tableName = tableRow["TABLE_NAME"].ToString();
+
+                tables.Add(tableName);
+            });
+
+            return tables;
+        }
+
+        public async Task<Table> QueryTableAsync(string tableName)
+        {
+            var columns = await QueryColumnsAsync(tableName);
+            var keys = await QueryKeysAsync(tableName);
+
+            var table = new Table(_schemaName, tableName, columns, keys, null);
+            return table;
+        }
+
+        public async Task<List<Table>> QueryTablesAsync(bool sortOnDependency = true)
         {
             _logger.LogDebug("listing tables..");
             var tables = new List<Table>();
@@ -279,7 +297,7 @@ namespace TableSnapper
                 var tableName = tableRow["TABLE_NAME"].ToString();
                 var schema = tableRow["TABLE_SCHEMA"].ToString();
 
-                var table = await GetTableAsync(tableName);
+                var table = await QueryTableAsync(tableName);
                 tables.Add(table);
             });
 
@@ -294,39 +312,39 @@ namespace TableSnapper
             return tables;
         }
 
-        public async Task<List<Table>> ListTablesDependentOnAsync(string tableName)
+        public async Task<List<Table>> QueryTablesDependentOnAsync(string tableName)
         {
             _logger.LogDebug($"listing dependent tables of {tableName}..");
             var tables = new List<Table>();
 
-            var foreignKeys = await ListTableForeignKeysAsync(tableName);
+            var foreignKeys = await QueryTableForeignKeysAsync(tableName);
             foreach (var table in foreignKeys.Select(f => f.ForeignTable))
             {
-                tables.Add(await GetTableAsync(table));
-                tables.AddRange(await ListTablesDependentOnAsync(table));
+                tables.Add(await QueryTableAsync(table));
+                tables.AddRange(await QueryTablesDependentOnAsync(table));
             }
 
             _logger.LogDebug($"found {tables.Count} dependent tables");
             return tables;
         }
 
-        public async Task<List<Table>> ListTablesReferencedByAsync(string tableName)
+        public async Task<List<Table>> QueryTablesReferencedByAsync(string tableName)
         {
             _logger.LogDebug($"listing referenced tables of {tableName}..");
             var tables = new List<Table>();
 
-            var foreignKeys = await ListTableForeignKeysAsync(null, tableName);
+            var foreignKeys = await QueryTableForeignKeysAsync(null, tableName);
             foreach (var table in foreignKeys.Select(f => f.TableName))
             {
-                tables.Add(await GetTableAsync(table));
-                tables.AddRange(await ListTablesReferencedByAsync(table));
+                tables.Add(await QueryTableAsync(table));
+                tables.AddRange(await QueryTablesReferencedByAsync(table));
             }
 
             _logger.LogDebug($"found {tables.Count} referenced tables");
             return tables;
         }
 
-        private async Task<List<Column>> ListColumnsAsync(string tableName)
+        private async Task<List<Column>> QueryColumnsAsync(string tableName)
         {
             _logger.LogDebug($"listing columns of {tableName}..");
             var columns = new List<Column>();
@@ -370,17 +388,17 @@ namespace TableSnapper
             return columns;
         }
 
-        private async Task<List<Key>> ListKeysAsync(string tableName)
+        private async Task<List<Key>> QueryKeysAsync(string tableName)
         {
             _logger.LogDebug("listing keys..");
 
             var keys = new List<Key>();
 
-            var primaryKey = await ListPrimaryKeyAsync(tableName);
+            var primaryKey = await QueryPrimaryKeyAsync(tableName);
             if (primaryKey != null)
                 keys.Add(primaryKey);
 
-            var foreignKeys = await ListTableForeignKeysAsync(tableName);
+            var foreignKeys = await QueryTableForeignKeysAsync(tableName);
             if (foreignKeys != null)
                 keys.AddRange(foreignKeys);
 
@@ -389,7 +407,7 @@ namespace TableSnapper
             return keys;
         }
 
-        private async Task<Key> ListPrimaryKeyAsync(string tableName)
+        private async Task<Key> QueryPrimaryKeyAsync(string tableName)
         {
             var query = SqlQueryBuilder.FromString(
                     "SELECT		tab.TABLE_NAME as tableName, COLUMN_NAME as columnName, col.CONSTRAINT_NAME as keyName\r\n" +
@@ -417,7 +435,7 @@ namespace TableSnapper
             return primaryKey;
         }
 
-        private async Task<List<Key>> ListTableForeignKeysAsync(string tableName, string referencedTableName = null)
+        private async Task<List<Key>> QueryTableForeignKeysAsync(string tableName, string referencedTableName = null)
         {
             var query = SqlQueryBuilder.FromString(
                     "SELECT		COL_NAME(fc.parent_object_id, fc.parent_column_id) AS ColumnName,\r\n" +
