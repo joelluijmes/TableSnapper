@@ -81,7 +81,7 @@ namespace TableSnapper
             {
                 Tables = tables,
                 ResolveReferencedTables = false,
-                OnlyOwnedTables = otherDatabase._connection == _connection,
+                OnlyOwnedTables = _schemaName != null && otherDatabase._connection == _connection,
                 SkipData = skipData
             };
 
@@ -96,7 +96,7 @@ namespace TableSnapper
             {
                 Tables = {table},
                 ResolveReferencedTables = true,
-                OnlyOwnedTables = otherDatabase._connection == _connection,
+                OnlyOwnedTables = _schemaName != null && otherDatabase._connection == _connection,
                 SkipData = skipData
             };
 
@@ -109,7 +109,7 @@ namespace TableSnapper
             {
                 Tables = { table },
                 ResolveReferencedTables = true,
-                OnlyOwnedTables = otherDatabase._connection == _connection,
+                OnlyOwnedTables = _schemaName != null && otherDatabase._connection == _connection,
                 SkipData = skipData
             };
 
@@ -118,7 +118,12 @@ namespace TableSnapper
 
         public async Task CloneFromAsync(DatabaseManager otherDatabase, CloneOptions options)
         {
-            var tables = options.Tables ?? await QueryTablesAsync();
+            if (!string.IsNullOrEmpty(options.Schema))
+            {
+               
+            }
+
+            var tables = options.Tables ?? await otherDatabase.QueryTablesAsync();
 
             if (options.ResolveReferencedTables)
             {
