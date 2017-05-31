@@ -282,6 +282,12 @@ namespace TableSnapper
             return table;
         }
 
+        public async Task<List<Table>> QueryTablesAsync(IEnumerable<string> tableNames, bool sortOnDependency = true)
+        {
+            var tables = await Task.WhenAll(tableNames.Select(QueryTableAsync));
+            return SortTables(sortOnDependency, tables.ToList());
+        }
+
         public async Task<List<Table>> QueryTablesAsync(bool sortOnDependency = true)
         {
             _logger.LogDebug("listing tables..");
@@ -303,13 +309,7 @@ namespace TableSnapper
 
             _logger.LogDebug($"found {tables.Count} tables");
 
-            if (!sortOnDependency)
-                return tables;
-
-            var copyTables = tables.ToArray();
-            tables = tables.TopologicalSort(left => copyTables.Where(right => left != right && right.Keys.Any(key => key.ForeignTable == left.Name))).ToList();
-
-            return tables;
+            return SortTables(sortOnDependency, tables);
         }
 
         public async Task<List<Table>> QueryTablesDependentOnAsync(string tableName)
@@ -465,6 +465,17 @@ namespace TableSnapper
             });
 
             return keys;
+        }
+
+        private static List<Table> SortTables(bool sortOnDependency, List<Table> tables)
+        {
+            if (!sortOnDependency)
+                return tables;
+
+            var copyTables = tables.ToArray();
+            tables = tables.TopologicalSort(left => copyTables.Where(right => left != right && right.Keys.Any(key => key.ForeignTable == left.Name))).ToList();
+
+            return tables;
         }
 
         private sealed class SqlQueryBuilder
