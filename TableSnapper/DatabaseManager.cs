@@ -10,7 +10,7 @@ using TableSnapper.Models;
 
 namespace TableSnapper
 {
-    internal sealed class DatabaseManager : IDisposable
+    internal sealed partial class DatabaseManager : IDisposable
     {
         private static readonly ILogger _logger = Program.CreateLogger<DatabaseManager>();
 
@@ -76,24 +76,51 @@ namespace TableSnapper
         {
             // query the tables from the OTHER
             var tables = await otherDatabase.QueryTablesAsync();
-            await CloneFromAsync(otherDatabase, tables, false, skipData);
+
+            var options = new CloneOptions(otherDatabase)
+            {
+                Tables = tables,
+                ResolveReferencedTables = false,
+                OnlyOwnedTables = otherDatabase._connection == _connection,
+                SkipData = skipData
+            };
+
+            await CloneFromAsync(otherDatabase, options);
         }
 
         public async Task CloneFromAsync(DatabaseManager otherDatabase, string tableName, bool skipData = false)
         {
             // query the tables from the OTHER
             var table = await otherDatabase.QueryTableAsync(tableName);
-            await CloneFromAsync(otherDatabase, new[] {table}, true, skipData);
+            var options = new CloneOptions(otherDatabase)
+            {
+                Tables = {table},
+                ResolveReferencedTables = true,
+                OnlyOwnedTables = otherDatabase._connection == _connection,
+                SkipData = skipData
+            };
+
+            await CloneFromAsync(otherDatabase, options);
         }
 
         public async Task CloneFromAsync(DatabaseManager otherDatabase, Table table, bool skipData = false)
         {
-            await CloneFromAsync(otherDatabase, new[] {table}, true, skipData);
+            var options = new CloneOptions(otherDatabase)
+            {
+                Tables = { table },
+                ResolveReferencedTables = true,
+                OnlyOwnedTables = otherDatabase._connection == _connection,
+                SkipData = skipData
+            };
+
+            await CloneFromAsync(otherDatabase, options);
         }
 
-        public async Task CloneFromAsync(DatabaseManager otherDatabase, IList<Table> tables, bool resolveReferenced = true, bool skipData = false)
+        public async Task CloneFromAsync(DatabaseManager otherDatabase, CloneOptions options)
         {
-            if (resolveReferenced)
+            var tables = options.Tables ?? await QueryTablesAsync();
+
+            if (options.ResolveReferencedTables)
             {
                 var temp = new List<Table>();
                 temp.AddRange(tables);
@@ -103,8 +130,11 @@ namespace TableSnapper
                 tables = temp.Distinct().ToList();
             }
 
+            // be sure to sort them by dependency
             // only use tables of the same schema -> skip shared tables
-            tables = SortTables(tables.Where(t => t.SchemaName == otherDatabase._schemaName));
+            tables = SortTables(options.OnlyOwnedTables
+                ? tables.Where(t => t.SchemaName == otherDatabase._schemaName)
+                : tables);
 
             // tables is sorted on dependency, so we delete the tables in reverse
             // delete the tables with the same name on our OWN schema
@@ -114,7 +144,7 @@ namespace TableSnapper
             foreach (var table in tables)
             {
                 // clone is the sql from the OTHER 
-                var clone = skipData
+                var clone = options.SkipData
                     ? otherDatabase.CloneTableStructureSql(table)
                     : await otherDatabase.CloneTableSqlAsync(table);
 
