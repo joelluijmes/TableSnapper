@@ -38,13 +38,13 @@ namespace TableSnapper
             _disposed = true;
         }
 
-        public async Task<string> BackupToDirectoryAsync(string baseDirectory, bool splitPerTable = true, bool skipData = false)
+        public async Task<string> BackupToDirectoryAsync(string baseDirectory, string schemaName = null, bool splitPerTable = true, bool skipData = false)
         {
             var tables = await QueryTablesAsync();
-            return await BackupToDirectoryAsync(baseDirectory, tables, splitPerTable, skipData);
+            return await BackupToDirectoryAsync(baseDirectory, tables, schemaName, splitPerTable, skipData);
         }
 
-        public async Task<string> BackupToDirectoryAsync(string baseDirectory, IList<Table> tables, bool splitPerTable = true, bool skipData = false)
+        public async Task<string> BackupToDirectoryAsync(string baseDirectory, IList<Table> tables, string schemaName = null, bool splitPerTable = true, bool skipData = false)
         {
             var directory = Path.Combine(baseDirectory, $"{DateTime.Now:ddMMyy-HHmmss}");
             Directory.CreateDirectory(directory);
@@ -59,7 +59,7 @@ namespace TableSnapper
 
                 if (splitPerTable)
                 {
-                    var path = Path.Combine(directory, $"{i + 1}_{_schemaName}_{table.Name}.sql");
+                    var path = Path.Combine(directory, $"{i + 1}_{schemaName ?? _schemaName}_{table.Name}.sql");
                     File.WriteAllText(path, clone);
                 }
                 else
@@ -72,7 +72,7 @@ namespace TableSnapper
             return directory;
         }
 
-        public async Task CloneFromAsync(DatabaseManager otherDatabase, bool skipData = false)
+        public async Task CloneFromAsync(DatabaseManager otherDatabase, string schemaName = null, bool skipData = false)
         {
             var tables = await otherDatabase.QueryTablesAsync();
 
@@ -86,12 +86,12 @@ namespace TableSnapper
                     ? otherDatabase.CloneTableStructureSql(table)
                     : await otherDatabase.CloneTableSqlAsync(table);
 
-                clone = clone.Replace("[SCHEMA_NAME]", $"{_schemaName}");
+                clone = clone.Replace("[SCHEMA_NAME]", $"{schemaName ?? _schemaName}");
                 await _connection.ExecuteNonQueryAsync(clone);
             }
         }
 
-        public async Task CloneFromDirectoryAsync(string directory)
+        public async Task CloneFromDirectoryAsync(string directory, string schemaName = null)
         {
             var files = Directory.GetFiles(directory).OrderBy(f => f).ToArray();
             if (files.Any(f => !Regex.IsMatch(f, "\\d+_.*\\.sql")))
@@ -101,7 +101,7 @@ namespace TableSnapper
             {
                 var content = File.ReadAllText(file);
 
-                content = content.Replace("[SCHEMA_NAME]", $"{_schemaName}");
+                content = content.Replace("[SCHEMA_NAME]", $"{schemaName ?? _schemaName}");
                 await _connection.ExecuteNonQueryAsync(content);
             }
         }
@@ -212,7 +212,10 @@ namespace TableSnapper
             return builder.ToString();
         }
 
-        public async Task DropTableAsync(string tableName, bool checkIfTableIsReferenced = false)
+        public Task DropTableAsync(Table table, bool checkIfTableIsReferenced = false) =>
+            DropTableAsync(table.Name, table.SchemaName, checkIfTableIsReferenced);
+
+        public async Task DropTableAsync(string tableName, string schemaName = null, bool checkIfTableIsReferenced = false)
         {
             if (checkIfTableIsReferenced)
             {
@@ -222,7 +225,7 @@ namespace TableSnapper
                     throw new InvalidOperationException($"This table is referenced by one or more foreign keys.");
             }
 
-            await _connection.ExecuteNonQueryAsync($"DROP TABLE IF EXISTS {_schemaName}.{tableName}");
+            await _connection.ExecuteNonQueryAsync($"DROP TABLE IF EXISTS {schemaName ?? _schemaName}.{tableName}");
         }
 
         public static async Task<List<string>> GetDatabasesAsync(DatabaseConnection connection)
@@ -255,11 +258,11 @@ namespace TableSnapper
             return databases;
         }
 
-        public async Task<List<string>> GetTablesAsync()
+        public async Task<List<string>> GetTablesAsync(string schemaName = null)
         {
             var query = SqlQueryBuilder
                 .FromString("SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
-                .Where("TABLE_SCHEMA", _schemaName)
+                .Where("TABLE_SCHEMA", schemaName ?? _schemaName)
                 .ToString();
 
             var tables = new List<string>();
@@ -273,29 +276,29 @@ namespace TableSnapper
             return tables;
         }
 
-        public async Task<Table> QueryTableAsync(string tableName)
+        public async Task<Table> QueryTableAsync(string tableName, string schemaName = null)
         {
             var columns = await QueryColumnsAsync(tableName);
             var keys = await QueryKeysAsync(tableName);
 
-            var table = new Table(_schemaName, tableName, columns, keys, null);
+            var table = new Table(schemaName ?? _schemaName, tableName, columns, keys, null);
             return table;
         }
 
-        public async Task<List<Table>> QueryTablesAsync(IEnumerable<string> tableNames, bool sortOnDependency = true)
+        public async Task<List<Table>> QueryTablesAsync(IEnumerable<string> tableNames, string schemaName = null, bool sortOnDependency = true)
         {
-            var tables = await Task.WhenAll(tableNames.Select(QueryTableAsync));
+            var tables = await Task.WhenAll(tableNames.Select(t => QueryTableAsync(t, schemaName)));
             return SortTables(sortOnDependency, tables.ToList());
         }
 
-        public async Task<List<Table>> QueryTablesAsync(bool sortOnDependency = true)
+        public async Task<List<Table>> QueryTablesAsync(string schemaName = null, bool sortOnDependency = true)
         {
             _logger.LogDebug("listing tables..");
             var tables = new List<Table>();
 
             var query = SqlQueryBuilder
                 .FromString("SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
-                .Where("TABLE_SCHEMA", _schemaName)
+                .Where("TABLE_SCHEMA", schemaName ?? _schemaName)
                 .ToString();
 
             await _connection.ExecuteQueryReaderAsync(query, async tableRow =>
@@ -312,7 +315,10 @@ namespace TableSnapper
             return SortTables(sortOnDependency, tables);
         }
 
-        public async Task<List<Table>> QueryTablesReferencedByAsync(string tableName, bool descendReferencedTables = true)
+        public Task<List<Table>> QueryTablesReferencedByAsync(Table table, bool descendReferencedTables = true) =>
+            QueryTablesReferencedByAsync(table.Name, table.SchemaName, descendReferencedTables);
+
+        public async Task<List<Table>> QueryTablesReferencedByAsync(string tableName, string schemaName = null, bool descendReferencedTables = true)
         {
             _logger.LogDebug($"listing dependent tables of {tableName}..");
             var tables = new List<Table>();
@@ -330,7 +336,7 @@ namespace TableSnapper
             return tables;
         }
 
-        //public async Task<List<Table>> QueryTablesReferencedByAsync(string tableName)
+        //public async Task<List<Table>> QueryTablesReferencedByAsync(string tableName, string schemaName = null)
         //{
         //    _logger.LogDebug($"listing referenced tables of {tableName}..");
         //    var tables = new List<Table>();
@@ -346,7 +352,10 @@ namespace TableSnapper
         //    return tables;
         //}
 
-        private async Task<List<Column>> QueryColumnsAsync(string tableName)
+        private Task<List<Column>> QueryColumnsAsync(Table table) =>
+            QueryColumnsAsync(table.Name, table.SchemaName);
+
+        private async Task<List<Column>> QueryColumnsAsync(string tableName, string schemaName = null)
         {
             _logger.LogDebug($"listing columns of {tableName}..");
             var columns = new List<Column>();
@@ -365,7 +374,7 @@ namespace TableSnapper
                     "		(SELECT COLUMNPROPERTY(OBJECT_ID(TABLE_NAME), COLUMN_NAME, 'isIdentity')) as isIdentity\r\n" +
                     "FROM	INFORMATION_SCHEMA.COLUMNS")
                 .Where("TABLE_NAME", tableName)
-                .Where("TABLE_SCHEMA", _schemaName)
+                .Where("TABLE_SCHEMA", schemaName ?? _schemaName)
                 .ToString();
 
             await _connection.ExecuteQueryReaderAsync(query, columnRow =>
@@ -390,17 +399,20 @@ namespace TableSnapper
             return columns;
         }
 
-        private async Task<List<Key>> QueryKeysAsync(string tableName)
+        private Task<List<Key>> QueryKeysAsync(Table table) =>
+            QueryKeysAsync(table.Name, table.SchemaName);
+
+        private async Task<List<Key>> QueryKeysAsync(string tableName, string schemaName = null)
         {
             _logger.LogDebug("listing keys..");
 
             var keys = new List<Key>();
 
-            var primaryKey = await QueryPrimaryKeyAsync(tableName);
+            var primaryKey = await QueryPrimaryKeyAsync(tableName, schemaName);
             if (primaryKey != null)
                 keys.Add(primaryKey);
 
-            var foreignKeys = await QueryTableForeignKeysAsync(tableName);
+            var foreignKeys = await QueryTableForeignKeysAsync(tableName, schemaName);
             if (foreignKeys != null)
                 keys.AddRange(foreignKeys);
 
@@ -409,7 +421,10 @@ namespace TableSnapper
             return keys;
         }
 
-        private async Task<Key> QueryPrimaryKeyAsync(string tableName)
+        private Task<Key> QueryPrimaryKeyAsync(Table table) =>
+            QueryPrimaryKeyAsync(table.Name, table.SchemaName);
+
+        private async Task<Key> QueryPrimaryKeyAsync(string tableName, string schemaName = null)
         {
             var query = SqlQueryBuilder.FromString(
                     "SELECT		tab.TABLE_NAME as tableName, COLUMN_NAME as columnName, col.CONSTRAINT_NAME as keyName\r\n" +
@@ -419,15 +434,15 @@ namespace TableSnapper
                     "			tab.TABLE_NAME = col.TABLE_NAME")
                 .Where("CONSTRAINT_TYPE", "PRIMARY KEY")
                 .Where("tab.TABLE_NAME", tableName)
-                .Where("tab.TABLE_SCHEMA", _schemaName)
-                .Where("col.TABLE_SCHEMA", _schemaName)
+                .Where("tab.TABLE_SCHEMA", schemaName ?? _schemaName)
+                .Where("col.TABLE_SCHEMA", schemaName ?? _schemaName)
                 .ToString();
 
             Key primaryKey = null;
             await _connection.ExecuteQueryReaderAsync(query, reader =>
             {
                 primaryKey = new Key(
-                    _schemaName,
+                    schemaName ?? _schemaName,
                     reader["tableName"].ToString(),
                     reader["columnName"].ToString(),
                     reader["keyName"].ToString()
@@ -440,7 +455,10 @@ namespace TableSnapper
             return primaryKey;
         }
 
-        private async Task<List<Key>> QueryTableForeignKeysAsync(string tableName, string referencedTableName = null)
+        private Task<List<Key>> QueryTableForeignKeysAsync(Table table, string referencedTableName = null) =>
+            QueryTableForeignKeysAsync(table.Name, table.SchemaName, referencedTableName);
+
+        private async Task<List<Key>> QueryTableForeignKeysAsync(string tableName, string schemaName = null, string referencedTableName = null)
         {
             var query = SqlQueryBuilder.FromString(
                     "SELECT		COL_NAME(fc.parent_object_id, fc.parent_column_id) AS ColumnName,\r\n" +
@@ -455,7 +473,7 @@ namespace TableSnapper
                     "ON			f.OBJECT_ID = fc.constraint_object_id")
                 .Where("OBJECT_NAME(f.parent_object_id)", tableName)
                 .Where("OBJECT_NAME(f.referenced_object_id)", referencedTableName)
-                .Where("OBJECT_SCHEMA_NAME(fc.parent_object_id)", _schemaName)
+                .Where("OBJECT_SCHEMA_NAME(fc.parent_object_id)", schemaName ?? _schemaName)
                 .ToString();
 
             var keys = new List<Key>();
@@ -494,7 +512,7 @@ namespace TableSnapper
 
             private bool _appendWhere;
 
-            public SqlQueryBuilder(string query)
+            private SqlQueryBuilder(string query)
             {
                 _stringBuilder = new StringBuilder(query);
             }
