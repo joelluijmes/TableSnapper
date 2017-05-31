@@ -24,7 +24,7 @@ namespace TableSnapper
             sqlBuilder.MultipleActiveResultSets = true;
 
             var connectionString = sqlBuilder.ConnectionString;
-            _logger.LogInformation($"connectionstring: {connectionString}");
+            _logger.LogTrace($"connectionstring: {connectionString}");
 
             _sqlConnection = new SqlConnection(connectionString);
         }
@@ -82,8 +82,15 @@ namespace TableSnapper
 
         public async Task<int> ExecuteNonQueryAsync(string command)
         {
+            _logger.LogTrace(command);
+
             using (var sqlCommand = new SqlCommand(command, _sqlConnection))
-                return await sqlCommand.ExecuteNonQueryAsync();
+            {
+                var count = await sqlCommand.ExecuteNonQueryAsync();
+                _logger.LogTrace($"{count} updated");
+
+                return count;
+            }
         }
 
         public Task ExecuteQueryReaderAsync(string command, Action<SqlDataReader> callback)
@@ -115,16 +122,26 @@ namespace TableSnapper
 
         public async Task ExecuteQueryReaderAsync(string command, Func<SqlDataReader, Task<bool>> callback)
         {
+            _logger.LogTrace(command);
+
+            var count = 0;
             using (var sqlCommand = new SqlCommand(command, _sqlConnection))
             using (var reader = await sqlCommand.ExecuteReaderAsync())
             {
                 while (await reader.ReadAsync())
                 {
                     // stop if callback returned false
-                    if (!await callback(reader))
-                        break;
+                    if (await callback(reader))
+                        continue;
+
+                    _logger.LogTrace("callback returned false -> early exit");
+                    break;
                 }
+
+                ++count;
             }
+
+            _logger.LogTrace($"{count} rows read");
         }
 
         public Task OpenAsync() => _sqlConnection.OpenAsync();
