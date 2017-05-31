@@ -15,16 +15,16 @@ namespace TableSnapper
         private static readonly ILogger _logger = Program.CreateLogger<DatabaseManager>();
 
         private readonly DatabaseConnection _connection;
-        private readonly bool _leaveOpen;
+        private readonly bool _disposeConnection;
         private readonly string _schemaName;
 
         private bool _disposed;
 
-        public DatabaseManager(DatabaseConnection connection, string schemaName, bool leaveOpen = false)
+        public DatabaseManager(DatabaseConnection connection, string schemaName, bool disposeConnection = true)
         {
             _connection = connection;
             _schemaName = schemaName;
-            _leaveOpen = leaveOpen;
+            _disposeConnection = disposeConnection;
         }
 
         public void Dispose()
@@ -32,7 +32,7 @@ namespace TableSnapper
             if (_disposed)
                 throw new ObjectDisposedException("Object already disposed");
 
-            if (_leaveOpen)
+            if (_disposeConnection)
                 _connection?.Dispose();
 
             _disposed = true;
@@ -59,7 +59,7 @@ namespace TableSnapper
 
                 if (splitPerTable)
                 {
-                    var path = Path.Combine(directory, $"{i + 1}_{table.Name}.sql");
+                    var path = Path.Combine(directory, $"{i + 1}_{_schemaName}_{table.Name}.sql");
                     File.WriteAllText(path, clone);
                 }
                 else
@@ -86,6 +86,7 @@ namespace TableSnapper
                     ? otherDatabase.CloneTableStructureSql(table)
                     : await otherDatabase.CloneTableSqlAsync(table);
 
+                clone = clone.Replace("[SCHEMA_NAME]", $"{_schemaName}");
                 await _connection.ExecuteNonQueryAsync(clone);
             }
         }
@@ -99,6 +100,8 @@ namespace TableSnapper
             foreach (var file in files)
             {
                 var content = File.ReadAllText(file);
+
+                content = content.Replace("[SCHEMA_NAME]", $"{_schemaName}");
                 await _connection.ExecuteNonQueryAsync(content);
             }
         }
@@ -108,18 +111,17 @@ namespace TableSnapper
             _logger.LogDebug($"cloning table data of {table}..");
 
             var builder = new StringBuilder();
-            var tableName = $"{_schemaName}.{table.Name}";
 
             // we need to explicity set 'IDENTITY_INSERT' on before we can insert values in a table
             // with a identity column
             var shouldDisableIdentityInsert = table.Columns.Any(c => c.IsIdentity);
 
             if (shouldDisableIdentityInsert)
-                builder.AppendLine($"SET IDENTITY_INSERT {tableName} ON");
+                builder.AppendLine($"SET IDENTITY_INSERT [SCHEMA_NAME].{table.Name} ON");
 
-            await _connection.ExecuteQueryReaderAsync($"SELECT * FROM {tableName}", reader =>
+            await _connection.ExecuteQueryReaderAsync($"SELECT * FROM {table.Name}", reader =>
             {
-                builder.Append($"INSERT {tableName} (");
+                builder.Append($"INSERT [SCHEMA_NAME].{table.Name} (");
                 builder.Append(table.Columns.Select(c => c.Name).Aggregate((a, b) => $"{a}, {b}"));
                 builder.Append(") VALUES (");
                 builder.Append(Enumerable
@@ -132,7 +134,7 @@ namespace TableSnapper
             });
 
             if (shouldDisableIdentityInsert)
-                builder.AppendLine($"SET IDENTITY_INSERT {tableName} OFF");
+                builder.AppendLine($"SET IDENTITY_INSERT [SCHEMA_NAME].{table.Name} OFF");
 
             _logger.LogDebug($"cloned table data of {table}!");
             return builder.ToString();
@@ -159,7 +161,7 @@ namespace TableSnapper
             _logger.LogDebug($"cloning table structure of {table}..");
 
             var builder = new StringBuilder();
-            builder.AppendLine($"CREATE TABLE {table.Name}(");
+            builder.AppendLine($"CREATE TABLE [SCHEMA_NAME].{table.Name}(");
 
             var primaryKey = table.Keys.SingleOrDefault(key => key.IsPrimaryKey);
             var foreignKeys = table.Keys.Where(key => key.IsForeignKey).ToList();
@@ -198,7 +200,7 @@ namespace TableSnapper
 
                 var foreignKey = foreignKeys.SingleOrDefault(key => key.Column == column.Name);
                 if (foreignKey != null)
-                    builder.Append($" REFERENCES {foreignKey.ForeignTable}({foreignKey.ForeignColumn})");
+                    builder.Append($" REFERENCES [SCHEMA_NAME].{foreignKey.ForeignTable}({foreignKey.ForeignColumn})");
 
                 // add the , if not last column
                 builder.AppendLine(i < table.Columns.Count - 1 ? "," : "");
@@ -220,7 +222,7 @@ namespace TableSnapper
                     throw new InvalidOperationException($"This table is referenced by one or more foreign keys.");
             }
 
-            await _connection.ExecuteNonQueryAsync($"DROP TABLE IF EXISTS {tableName}");
+            await _connection.ExecuteNonQueryAsync($"DROP TABLE IF EXISTS {_schemaName}.{tableName}");
         }
 
         public static async Task<string> GetDefaultSchema(DatabaseConnection connection)
