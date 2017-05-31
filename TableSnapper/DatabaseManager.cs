@@ -417,12 +417,15 @@ namespace TableSnapper
                     "			tab.TABLE_NAME = col.TABLE_NAME")
                 .Where("CONSTRAINT_TYPE", "PRIMARY KEY")
                 .Where("tab.TABLE_NAME", tableName)
+                .Where("tab.TABLE_SCHEMA", _schemaName)
+                .Where("col.TABLE_SCHEMA", _schemaName)
                 .ToString();
 
             Key primaryKey = null;
             await _connection.ExecuteQueryReaderAsync(query, reader =>
             {
                 primaryKey = new Key(
+                    _schemaName,
                     reader["tableName"].ToString(),
                     reader["columnName"].ToString(),
                     reader["keyName"].ToString()
@@ -442,23 +445,28 @@ namespace TableSnapper
                     "           f.name AS KeyName,\r\n" +
                     "			OBJECT_NAME (f.referenced_object_id) AS ReferenceTableName,\r\n" +
                     "			COL_NAME(fc.referenced_object_id, fc.referenced_column_id) AS ReferenceColumnName,\r\n" +
-                    "			OBJECT_NAME(f.parent_object_id) AS TableName\r\n" +
+                    "			OBJECT_NAME(f.parent_object_id) AS TableName,\r\n" +
+                    "           OBJECT_SCHEMA_NAME(f.referenced_object_id) AS ReferenceSchemaName,\r\n" +
+                    "           OBJECT_SCHEMA_NAME(fc.parent_object_id) as SchemaName\r\n" +
                     "FROM		sys.foreign_keys AS f\r\n" +
                     "INNER JOIN	sys.foreign_key_columns AS fc\r\n" +
                     "ON			f.OBJECT_ID = fc.constraint_object_id")
                 .Where("OBJECT_NAME(f.parent_object_id)", tableName)
                 .Where("OBJECT_NAME(f.referenced_object_id)", referencedTableName)
+                .Where("OBJECT_SCHEMA_NAME(fc.parent_object_id)", _schemaName)
                 .ToString();
 
             var keys = new List<Key>();
             await _connection.ExecuteQueryReaderAsync(query, reader =>
             {
                 var key = new Key(
+                    reader["SchemaName"].ToString(),
                     reader["TableName"].ToString(),
                     reader["ColumnName"].ToString(),
                     reader["KeyName"].ToString(),
                     reader["ReferenceTableName"].ToString(),
-                    reader["ReferenceColumnName"].ToString()
+                    reader["ReferenceColumnName"].ToString(),
+                    reader["ReferenceSchemaName"].ToString()
                 );
 
                 keys.Add(key);
