@@ -74,19 +74,22 @@ namespace TableSnapper
 
         public async Task CloneFromAsync(DatabaseManager otherDatabase, string schemaName = null, bool skipData = false)
         {
-            var tables = await otherDatabase.QueryTablesAsync(schemaName);
+            // query the tables from the OTHER
+            var tables = await otherDatabase.QueryTablesAsync();
 
             // tables is sorted on dependency, so we delete the tables in reverse
+            // delete the tables with the same name on our OWN schema
             for (var i = tables.Count - 1; i >= 0; --i)
-                await DropTableAsync(tables[i].Name, schemaName);
+                await DropTableAsync(tables[i].Name, schemaName ?? _schemaName);
 
             foreach (var table in tables)
             {
+                // clone is the sql from the OTHER 
                 var clone = skipData
                     ? otherDatabase.CloneTableStructureSql(table)
                     : await otherDatabase.CloneTableSqlAsync(table);
 
-                // clone = clone.Replace("[SCHEMA_NAME]", $"{schemaName ?? _schemaName}");
+                clone = clone.Replace(otherDatabase._schemaName, $"{schemaName ?? _schemaName}");
                 await _connection.ExecuteNonQueryAsync(clone);
             }
         }
