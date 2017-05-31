@@ -72,15 +72,44 @@ namespace TableSnapper
             return directory;
         }
 
-        public async Task CloneFromAsync(DatabaseManager otherDatabase, string schemaName = null, bool skipData = false)
+        public async Task CloneFromAsync(DatabaseManager otherDatabase, bool skipData = false)
         {
             // query the tables from the OTHER
             var tables = await otherDatabase.QueryTablesAsync();
+            await CloneFromAsync(otherDatabase, tables, false, skipData);
+        }
+
+        public async Task CloneFromAsync(DatabaseManager otherDatabase, string tableName, bool skipData = false)
+        {
+            // query the tables from the OTHER
+            var table = await otherDatabase.QueryTableAsync(tableName);
+            await CloneFromAsync(otherDatabase, new[] {table}, true, skipData);
+        }
+
+        public async Task CloneFromAsync(DatabaseManager otherDatabase, Table table, bool skipData = false)
+        {
+            await CloneFromAsync(otherDatabase, new[] {table}, true, skipData);
+        }
+
+        public async Task CloneFromAsync(DatabaseManager otherDatabase, IList<Table> tables, bool resolveReferenced = true, bool skipData = false)
+        {
+            if (resolveReferenced)
+            {
+                var temp = new List<Table>();
+                temp.AddRange(tables);
+                foreach (var table in tables)
+                    temp.AddRange(await QueryTablesReferencedByAsync(table));
+
+                tables = temp.Distinct().ToList();
+            }
+
+            // only use tables of the same schema -> skip shared tables
+            tables = SortTables(tables.Where(t => t.SchemaName == otherDatabase._schemaName));
 
             // tables is sorted on dependency, so we delete the tables in reverse
             // delete the tables with the same name on our OWN schema
             for (var i = tables.Count - 1; i >= 0; --i)
-                await DropTableAsync(tables[i].Name, schemaName ?? _schemaName);
+                await DropTableAsync(tables[i].Name, _schemaName);
 
             foreach (var table in tables)
             {
@@ -89,7 +118,7 @@ namespace TableSnapper
                     ? otherDatabase.CloneTableStructureSql(table)
                     : await otherDatabase.CloneTableSqlAsync(table);
 
-                clone = clone.Replace(otherDatabase._schemaName, $"{schemaName ?? _schemaName}");
+                clone = clone.Replace(otherDatabase._schemaName, _schemaName);
                 await _connection.ExecuteNonQueryAsync(clone);
             }
         }
@@ -131,9 +160,7 @@ namespace TableSnapper
                 for (var i = 0; i < reader.FieldCount; ++i)
                 {
                     if (reader.IsDBNull(i))
-                    {
                         builder.Append("NULL");
-                    }
                     else
                     {
                         switch (reader[i])
@@ -146,8 +173,8 @@ namespace TableSnapper
                             break;
 
                         case Guid guid:
-                                builder.Append($"CONVERT(uniqueidentifier, '{guid}')");
-                                break;
+                            builder.Append($"CONVERT(uniqueidentifier, '{guid}')");
+                            break;
                         default:
                             builder.Append($"'{reader[i]}'");
                             break;
@@ -157,7 +184,7 @@ namespace TableSnapper
                     if (i < reader.FieldCount - 1)
                         builder.Append(", ");
                 }
-                        
+
                 builder.AppendLine(")");
             });
 
@@ -201,8 +228,8 @@ namespace TableSnapper
                 builder.Append($"  {column.Name} {column.DataTypeName} ");
                 if (column.CharacterMaximumLength.HasValue)
                 {
-                    builder.Append(column.CharacterMaximumLength == -1 
-                        ? "(max)" 
+                    builder.Append(column.CharacterMaximumLength == -1
+                        ? "(max)"
                         : $"({column.CharacterMaximumLength}) ");
                 }
 
@@ -260,6 +287,16 @@ namespace TableSnapper
             await _connection.ExecuteNonQueryAsync($"DROP TABLE IF EXISTS {schemaName ?? _schemaName}.{tableName}");
         }
 
+        public override bool Equals(object obj)
+        {
+            if (ReferenceEquals(null, obj))
+                return false;
+            if (ReferenceEquals(this, obj))
+                return true;
+
+            return obj is DatabaseManager && Equals((DatabaseManager) obj);
+        }
+
         public static async Task<List<string>> GetDatabasesAsync(DatabaseConnection connection)
         {
             _logger.LogDebug("listing databases..");
@@ -278,6 +315,8 @@ namespace TableSnapper
 
             return schema;
         }
+
+        public override int GetHashCode() => _connection?.GetHashCode() ?? 0;
 
         public static async Task<List<string>> GetSchemasAsync(DatabaseConnection connection)
         {
@@ -307,6 +346,10 @@ namespace TableSnapper
 
             return tables;
         }
+
+        public static bool operator ==(DatabaseManager left, DatabaseManager right) => Equals(left, right);
+
+        public static bool operator !=(DatabaseManager left, DatabaseManager right) => !Equals(left, right);
 
         public async Task<Table> QueryTableAsync(string tableName, string schemaName = null)
         {
@@ -369,6 +412,8 @@ namespace TableSnapper
             _logger.LogDebug($"found {tables.Count} dependent tables");
             return SortTables(tables);
         }
+
+        private bool Equals(DatabaseManager other) => Equals(_connection, other._connection);
 
         //public async Task<List<Table>> QueryTablesReferencedByAsync(string tableName, string schemaName = null)
         //{
@@ -529,17 +574,15 @@ namespace TableSnapper
             return keys;
         }
 
-        private static List<Table> SortTables(List<Table> tables) => SortTables(true, tables);
+        private static List<Table> SortTables(IEnumerable<Table> tables) => SortTables(true, tables);
 
-        private static List<Table> SortTables(bool sortOnDependency, List<Table> tables)
+        private static List<Table> SortTables(bool sortOnDependency, IEnumerable<Table> tables)
         {
-            if (!sortOnDependency)
-                return tables;
+            var copyTables = tables.ToList();
 
-            var copyTables = tables.ToArray();
-            tables = tables.TopologicalSort(left => copyTables.Where(right => left != right && right.Keys.Any(key => key.ForeignTable == left.Name))).ToList();
-
-            return tables;
+            return sortOnDependency
+                ? copyTables.TopologicalSort(left => copyTables.Where(right => left != right && right.Keys.Any(key => key.ForeignTable == left.Name))).ToList()
+                : copyTables;
         }
 
         private sealed class SqlQueryBuilder

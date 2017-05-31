@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Data.Common;
 using System.Data.SqlClient;
 using System.Threading.Tasks;
@@ -145,5 +146,23 @@ namespace TableSnapper
         }
 
         public Task OpenAsync() => _sqlConnection.OpenAsync();
+
+        private bool Equals(DatabaseConnection other) => Equals(_sqlConnection, other._sqlConnection);
+
+        public override bool Equals(object obj)
+        {
+            if (ReferenceEquals(null, obj))
+                return false;
+            if (ReferenceEquals(this, obj))
+                return true;
+
+            return obj is DatabaseConnection && Equals((DatabaseConnection) obj);
+        }
+
+        public override int GetHashCode() => _sqlConnection?.GetHashCode() ?? 0;
+
+        public static bool operator ==(DatabaseConnection left, DatabaseConnection right) => Equals(left, right);
+
+        public static bool operator !=(DatabaseConnection left, DatabaseConnection right) => !Equals(left, right);
     }
 }
