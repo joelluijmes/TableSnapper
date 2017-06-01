@@ -118,19 +118,24 @@ namespace TableSnapper
 
         public async Task CloneFromAsync(DatabaseManager otherDatabase, CloneOptions options)
         {
+            var otherSchema = otherDatabase._schemaName;
             if (!string.IsNullOrEmpty(options.Schema))
             {
-               
+                if (!await otherDatabase.QuerySchemaExistsAsync(options.Schema))
+                    throw new InvalidOperationException("otherDatabase doesn't have the schema specified in the options");
+
+                otherSchema = options.Schema;
             }
 
-            var tables = options.Tables ?? await otherDatabase.QueryTablesAsync();
+            // get the to be cloned tables, or query them from the otherDatabase
+            var tables = options.Tables ?? await otherDatabase.QueryTablesAsync(otherSchema);
 
             if (options.ResolveReferencedTables)
             {
                 var temp = new List<Table>();
                 temp.AddRange(tables);
                 foreach (var table in tables)
-                    temp.AddRange(await QueryTablesReferencedByAsync(table));
+                    temp.AddRange(await otherDatabase.QueryTablesReferencedByAsync(table));
 
                 tables = temp.Distinct().ToList();
             }
@@ -138,13 +143,21 @@ namespace TableSnapper
             // be sure to sort them by dependency
             // only use tables of the same schema -> skip shared tables
             tables = SortTables(options.OnlyOwnedTables
-                ? tables.Where(t => t.SchemaName == otherDatabase._schemaName)
+                ? tables.Where(t => t.SchemaName == otherSchema)
                 : tables);
 
             // tables is sorted on dependency, so we delete the tables in reverse
             // delete the tables with the same name on our OWN schema
             for (var i = tables.Count - 1; i >= 0; --i)
                 await DropTableAsync(tables[i].Name, _schemaName);
+
+            var allSchemas = await GetSchemasAsync(_connection);
+            var missingSchemas = tables
+                .Select(table => table.SchemaName)
+                .Distinct()
+                .Where(schema => !allSchemas.Contains(schema));
+            foreach (var schema in missingSchemas)
+                await CreateSchemaAsync(schema);
 
             foreach (var table in tables)
             {
@@ -153,10 +166,12 @@ namespace TableSnapper
                     ? otherDatabase.CloneTableStructureSql(table)
                     : await otherDatabase.CloneTableSqlAsync(table);
 
-                clone = clone.Replace(otherDatabase._schemaName, _schemaName);
+                clone = clone.Replace(otherSchema, _schemaName);
                 await _connection.ExecuteNonQueryAsync(clone);
             }
         }
+
+        public Task CreateSchemaAsync(string schemaName) => _connection.ExecuteNonQueryAsync($"CREATE SCHEMA {schemaName}");
 
         public async Task CloneFromDirectoryAsync(string directory, string schemaName = null)
         {
