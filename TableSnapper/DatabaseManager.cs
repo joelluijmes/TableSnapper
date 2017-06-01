@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -15,9 +14,6 @@ namespace TableSnapper
     {
         private static readonly ILogger _logger = Program.CreateLogger<DatabaseManager>();
 
-        public DatabaseConnection Connection { get; }
-        public string SchemaName { get; }
-        
         private bool _disposed;
 
         public DatabaseManager(DatabaseConnection connection, string schemaName = null)
@@ -25,7 +21,10 @@ namespace TableSnapper
             Connection = connection;
             SchemaName = schemaName;
         }
-        
+
+        public DatabaseConnection Connection { get; }
+        public string SchemaName { get; }
+
         public async Task<string> BackupToDirectoryAsync(string baseDirectory, string schemaName = null, bool splitPerTable = true, bool skipData = false)
         {
             var tables = await QueryTablesAsync(schemaName);
@@ -59,108 +58,7 @@ namespace TableSnapper
 
             return directory;
         }
-
-        public async Task CloneFromAsync(DatabaseManager otherDatabase, bool skipData = false)
-        {
-            // query the tables from the OTHER
-            var tables = await otherDatabase.QueryTablesAsync();
-
-            var options = new CloneOptions(otherDatabase)
-            {
-                Tables = tables,
-                ResolveReferencedTables = false,
-                OnlyOwnedTables = SchemaName != null && otherDatabase.Connection == Connection,
-                SkipData = skipData
-            };
-
-            await CloneFromAsync(otherDatabase, options);
-        }
-
-        public async Task CloneFromAsync(DatabaseManager otherDatabase, string tableName, bool skipData = false)
-        {
-            // query the tables from the OTHER
-            var table = await otherDatabase.QueryTableAsync(tableName);
-            var options = new CloneOptions(otherDatabase)
-            {
-                Tables = {table},
-                ResolveReferencedTables = true,
-                OnlyOwnedTables = SchemaName != null && otherDatabase.Connection == Connection,
-                SkipData = skipData
-            };
-
-            await CloneFromAsync(otherDatabase, options);
-        }
-
-        public async Task CloneFromAsync(DatabaseManager otherDatabase, Table table, bool skipData = false)
-        {
-            var options = new CloneOptions(otherDatabase)
-            {
-                Tables = { table },
-                ResolveReferencedTables = true,
-                OnlyOwnedTables = SchemaName != null && otherDatabase.Connection == Connection,
-                SkipData = skipData
-            };
-
-            await CloneFromAsync(otherDatabase, options);
-        }
-
-        public async Task CloneFromAsync(DatabaseManager otherDatabase, CloneOptions options)
-        {
-            var otherSchema = otherDatabase.SchemaName;
-            if (!string.IsNullOrEmpty(options.Schema))
-            {
-                if (!await otherDatabase.QuerySchemaExistsAsync(options.Schema))
-                    throw new InvalidOperationException("otherDatabase doesn't have the schema specified in the options");
-
-                otherSchema = options.Schema;
-            }
-
-            // get the to be cloned tables, or query them from the otherDatabase
-            var tables = options.Tables ?? await otherDatabase.QueryTablesAsync(otherSchema);
-
-            if (options.ResolveReferencedTables)
-            {
-                var temp = new List<Table>();
-                temp.AddRange(tables);
-                foreach (var table in tables)
-                    temp.AddRange(await otherDatabase.QueryTablesReferencedByAsync(table));
-
-                tables = temp.Distinct().ToList();
-            }
-
-            // be sure to sort them by dependency
-            // only use tables of the same schema -> skip shared tables
-            tables = SortTables(options.OnlyOwnedTables
-                ? tables.Where(t => t.SchemaName == otherSchema)
-                : tables);
-
-            // tables is sorted on dependency, so we delete the tables in reverse
-            // delete the tables with the same name on our OWN schema
-            for (var i = tables.Count - 1; i >= 0; --i)
-                await DropTableAsync(tables[i].Name, SchemaName);
-
-            var allSchemas = await GetSchemasAsync(Connection);
-            var missingSchemas = tables
-                .Select(table => table.SchemaName)
-                .Distinct()
-                .Where(schema => !allSchemas.Contains(schema));
-            foreach (var schema in missingSchemas)
-                await CreateSchemaAsync(schema);
-
-            foreach (var table in tables)
-            {
-                // clone is the sql from the OTHER 
-                var clone = options.SkipData
-                    ? otherDatabase.CloneTableStructureSql(table)
-                    : await otherDatabase.CloneTableSqlAsync(table);
-
-                clone = clone.Replace(otherSchema, SchemaName);
-                await Connection.ExecuteNonQueryAsync(clone);
-            }
-        }
-
-        public Task CreateSchemaAsync(string schemaName) => Connection.ExecuteNonQueryAsync($"CREATE SCHEMA {schemaName}");
-
+        
         public async Task CloneFromDirectoryAsync(string directory, string schemaName = null)
         {
             var files = Directory.GetFiles(directory).OrderBy(f => f).ToArray();
@@ -309,21 +207,7 @@ namespace TableSnapper
             return builder.ToString();
         }
 
-        public Task TruncateTableAsync(Table table, bool truncateReferenced = false) =>
-            TruncateTableAsync(table.Name, table.SchemaName, truncateReferenced);
-
-        public async Task TruncateTableAsync(string tableName, string schemaName = null, bool truncateReferenced = false)
-        {
-            if (truncateReferenced)
-            {
-                var referenced = await QueryTablesReferencedByAsync(tableName, schemaName);
-
-                foreach (var table in referenced)
-                    await TruncateTableAsync(table.Name, table.SchemaName);
-            }
-
-            await Connection.ExecuteNonQueryAsync($"TRUNCATE TABLE {schemaName ?? SchemaName}.{tableName}");
-        }
+        public Task CreateSchemaAsync(string schemaName) => Connection.ExecuteNonQueryAsync($"CREATE SCHEMA {schemaName}");
 
         public Task DropTableAsync(Table table, bool checkIfTableIsReferenced = false) =>
             DropTableAsync(table.Name, table.SchemaName, checkIfTableIsReferenced);
@@ -418,20 +302,6 @@ namespace TableSnapper
             return anyRow;
         }
 
-        public async Task<bool> QueryTableExistsAsync(string tableName, string schemaName = null)
-        {
-            var query = SqlQueryBuilder
-                .FromString("SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
-                .Where("TABLE_SCHEMA", schemaName ?? SchemaName)
-                .Where("TABLE_NAME", tableName)
-                .ToString();
-
-            var anyRow = false;
-            await Connection.ExecuteQueryReaderAsync(query, x => { anyRow = true; });
-
-            return anyRow;
-        }
-
         public async Task<Table> QueryTableAsync(string tableName, string schemaName = null)
         {
             schemaName = schemaName ?? SchemaName;
@@ -444,6 +314,20 @@ namespace TableSnapper
 
             var table = new Table(schemaName, tableName, columns, keys, null);
             return table;
+        }
+
+        public async Task<bool> QueryTableExistsAsync(string tableName, string schemaName = null)
+        {
+            var query = SqlQueryBuilder
+                .FromString("SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
+                .Where("TABLE_SCHEMA", schemaName ?? SchemaName)
+                .Where("TABLE_NAME", tableName)
+                .ToString();
+
+            var anyRow = false;
+            await Connection.ExecuteQueryReaderAsync(query, x => { anyRow = true; });
+
+            return anyRow;
         }
 
         public async Task<List<Table>> QueryTablesAsync(IEnumerable<string> tableNames, string schemaName = null, bool sortOnDependency = true)
@@ -495,6 +379,24 @@ namespace TableSnapper
 
             _logger.LogDebug($"found {tables.Count} dependent tables");
             return SortTables(tables);
+        }
+
+        public static List<Table> SortTables(IEnumerable<Table> tables) => SortTables(true, tables);
+
+        public Task TruncateTableAsync(Table table, bool truncateReferenced = false) =>
+            TruncateTableAsync(table.Name, table.SchemaName, truncateReferenced);
+
+        public async Task TruncateTableAsync(string tableName, string schemaName = null, bool truncateReferenced = false)
+        {
+            if (truncateReferenced)
+            {
+                var referenced = await QueryTablesReferencedByAsync(tableName, schemaName);
+
+                foreach (var table in referenced)
+                    await TruncateTableAsync(table.Name, table.SchemaName);
+            }
+
+            await Connection.ExecuteNonQueryAsync($"TRUNCATE TABLE {schemaName ?? SchemaName}.{tableName}");
         }
 
         private bool Equals(DatabaseManager other) => Equals(Connection, other.Connection);
@@ -657,8 +559,6 @@ namespace TableSnapper
 
             return keys;
         }
-
-        public static List<Table> SortTables(IEnumerable<Table> tables) => SortTables(true, tables);
 
         private static List<Table> SortTables(bool sortOnDependency, IEnumerable<Table> tables)
         {

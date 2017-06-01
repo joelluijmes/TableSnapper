@@ -35,11 +35,9 @@ namespace TableSnapper.Models
         public bool IsPrimaryKey { get; }
         public bool IsForeignKey { get; }
 
-        public static IEqualityComparer<Key> KeyComparer { get; } = new KeyEqualityComparer();
-
         public override string ToString() => KeyName;
 
-        private sealed class KeyEqualityComparer : IEqualityComparer<Key>
+        private sealed class KeyStructureEqualityComparer : IEqualityComparer<Key>
         {
             public bool Equals(Key x, Key y)
             {
@@ -52,18 +50,15 @@ namespace TableSnapper.Models
                 if (x.GetType() != y.GetType())
                     return false;
 
-                return string.Equals(x.SchemaName, y.SchemaName) && string.Equals(x.TableName, y.TableName) && string.Equals(x.Column, y.Column) && string.Equals(x.KeyName, y.KeyName) && string.Equals(x.ForeignSchemaName, y.ForeignSchemaName) && string.Equals(x.ForeignTable, y.ForeignTable) && string.Equals(x.ForeignColumn, y.ForeignColumn) && x.IsPrimaryKey == y.IsPrimaryKey && x.IsForeignKey == y.IsForeignKey;
+                return string.Equals(x.TableName, y.TableName) && string.Equals(x.Column, y.Column) && string.Equals(x.ForeignTable, y.ForeignTable) && string.Equals(x.ForeignColumn, y.ForeignColumn) && x.IsPrimaryKey == y.IsPrimaryKey && x.IsForeignKey == y.IsForeignKey;
             }
 
             public int GetHashCode(Key obj)
             {
                 unchecked
                 {
-                    var hashCode = obj.SchemaName != null ? obj.SchemaName.GetHashCode() : 0;
-                    hashCode = (hashCode * 397) ^ (obj.TableName != null ? obj.TableName.GetHashCode() : 0);
+                    var hashCode = (obj.TableName != null ? obj.TableName.GetHashCode() : 0);
                     hashCode = (hashCode * 397) ^ (obj.Column != null ? obj.Column.GetHashCode() : 0);
-                    hashCode = (hashCode * 397) ^ (obj.KeyName != null ? obj.KeyName.GetHashCode() : 0);
-                    hashCode = (hashCode * 397) ^ (obj.ForeignSchemaName != null ? obj.ForeignSchemaName.GetHashCode() : 0);
                     hashCode = (hashCode * 397) ^ (obj.ForeignTable != null ? obj.ForeignTable.GetHashCode() : 0);
                     hashCode = (hashCode * 397) ^ (obj.ForeignColumn != null ? obj.ForeignColumn.GetHashCode() : 0);
                     hashCode = (hashCode * 397) ^ obj.IsPrimaryKey.GetHashCode();
@@ -72,5 +67,7 @@ namespace TableSnapper.Models
                 }
             }
         }
+
+        public static IEqualityComparer<Key> KeyStructureComparer { get; } = new KeyStructureEqualityComparer();
     }
 }
