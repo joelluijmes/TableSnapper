@@ -4,7 +4,7 @@ using TableSnapper.Models;
 
 namespace TableSnapper
 {
-    internal sealed partial class DatabaseManager : IDisposable
+    internal sealed partial class DatabaseManager
     {
         public class CloneOptions
         {

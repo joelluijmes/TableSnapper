@@ -11,35 +11,21 @@ using TableSnapper.Models;
 
 namespace TableSnapper
 {
-    internal sealed partial class DatabaseManager : IDisposable
+    internal sealed partial class DatabaseManager
     {
         private static readonly ILogger _logger = Program.CreateLogger<DatabaseManager>();
 
         public DatabaseConnection Connection { get; }
         public string SchemaName { get; }
-
-        private readonly bool _disposeConnection;
-
+        
         private bool _disposed;
 
-        public DatabaseManager(DatabaseConnection connection, string schemaName = null, bool disposeConnection = true)
+        public DatabaseManager(DatabaseConnection connection, string schemaName = null)
         {
             Connection = connection;
             SchemaName = schemaName;
-            _disposeConnection = disposeConnection;
         }
-
-        public void Dispose()
-        {
-            if (_disposed)
-                throw new ObjectDisposedException("Object already disposed");
-
-            if (_disposeConnection)
-                Connection?.Dispose();
-
-            _disposed = true;
-        }
-
+        
         public async Task<string> BackupToDirectoryAsync(string baseDirectory, string schemaName = null, bool splitPerTable = true, bool skipData = false)
         {
             var tables = await QueryTablesAsync(schemaName);
