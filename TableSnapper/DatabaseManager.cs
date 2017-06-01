@@ -261,7 +261,8 @@ namespace TableSnapper
             _logger.LogDebug("listing schemas..");
             var databases = new List<string>();
 
-            await connection.ExecuteQueryReaderAsync("SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA", reader => { databases.Add(reader["SCHEMA_NAME"].ToString()); });
+            await connection.ExecuteQueryReaderAsync("SELECT SCHEMA_NAME, SCHEMA_OWNER FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME != SCHEMA_OWNER", 
+                reader => { databases.Add(reader["SCHEMA_NAME"].ToString()); });
 
             _logger.LogDebug($"found {databases.Count} schemas");
             return databases;
@@ -292,7 +293,7 @@ namespace TableSnapper
         public async Task<bool> QuerySchemaExistsAsync(string schemaName = null)
         {
             var query = SqlQueryBuilder
-                .FromString("SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA")
+                .FromString("SELECT SCHEMA_NAME, SCHEMA_OWNER FROM INFORMATION_SCHEMA.SCHEMATA")
                 .Where("SCHEMA_NAME", schemaName ?? SchemaName)
                 .ToString();
 
@@ -300,6 +301,12 @@ namespace TableSnapper
             await Connection.ExecuteQueryReaderAsync(query, x => { anyRow = true; });
 
             return anyRow;
+        }
+
+        public async Task<List<Schema>> QuerySchemasAsync()
+        {
+            var schemaNames = await GetSchemasAsync(Connection);
+            return (await Task.WhenAll(schemaNames.Select(async schemaName => new Schema(schemaName, await GetTablesAsync(schemaName))))).ToList();
         }
 
         public async Task<Table> QueryTableAsync(string tableName, string schemaName = null)

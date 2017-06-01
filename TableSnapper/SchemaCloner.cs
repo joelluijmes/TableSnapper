@@ -9,17 +9,22 @@ namespace TableSnapper
 {
     internal sealed class SchemaCloner
     {
-        private readonly DatabaseConnection _databaseConnection;
+        private readonly DatabaseConnection _sourceConnection;
+        private readonly DatabaseConnection _targetConnection;
 
-        public SchemaCloner(DatabaseConnection databaseConnection)
+        public SchemaCloner(DatabaseConnection databaseConnection) : this(databaseConnection, databaseConnection)
+        { }
+
+        public SchemaCloner(DatabaseConnection sourceConnection, DatabaseConnection targetConnection)
         {
-            _databaseConnection = databaseConnection;
+            _sourceConnection = sourceConnection;
+            _targetConnection = targetConnection;
         }
-        
+
         public async Task CloneSchemaAsync(CloneOptions options)
         {
-            var sourceManager = new DatabaseManager(_databaseConnection, options.SourceSchema);
-            var targetManager = new DatabaseManager(_databaseConnection, options.TargetSchema);
+            var sourceManager = new DatabaseManager(_sourceConnection, options.SourceSchema);
+            var targetManager = new DatabaseManager(_targetConnection, options.TargetSchema);
 
             // get tables
             var inputTables = options.Tables ?? await sourceManager.GetTablesAsync();
@@ -70,11 +75,10 @@ namespace TableSnapper
             public bool CloneStructure { get; set; }
             public bool CloneData { get; set; }
 
+            public CloneOptions(string schema) : this (schema, schema) { }
+
             public CloneOptions(string sourceSchema, string targetSchema)
             {
-                if (sourceSchema == targetSchema)
-                    throw new InvalidOperationException("Source- and TargetManager can't be the same");
-
                 SourceSchema = sourceSchema;
                 TargetSchema = targetSchema;
             }
