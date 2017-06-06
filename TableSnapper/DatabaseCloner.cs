@@ -39,7 +39,7 @@ namespace TableSnapper
             // cache the schemas 
             var targetSchemas = await DatabaseManager.GetSchemasAsync(_targetConnection);
             var schemas = tables.Select(s => s.SchemaName)
-                .Distinct()
+                .Distinct(StringComparer.CurrentCultureIgnoreCase)
                 .Where(schema => schema != options.SourceSchema)
                 .ToList();
 
@@ -58,7 +58,7 @@ namespace TableSnapper
             }
 
             // cache the tables
-            bool SkipShared(ShallowTable table) => options.SkipSharedTables && table.SchemaName != sourceManager.SchemaName;
+            bool SkipShared(ShallowTable table) => options.SkipSharedTables && _targetConnection == _sourceConnection && table.SchemaName != sourceManager.SchemaName;
             string TargetSchemaName(ShallowTable table) => sourceManager == targetManager ? table.SchemaName : (options.TargetSchema ?? table.SchemaName);
             
             // drop the target tables (if exists)

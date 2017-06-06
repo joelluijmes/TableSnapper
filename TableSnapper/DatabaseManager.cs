@@ -113,7 +113,8 @@ namespace TableSnapper
                             builder.Append($"CONVERT(uniqueidentifier, '{guid}')");
                             break;
                         default:
-                            builder.Append($"'{reader[i]}'");
+                            var value = reader[i].ToString().Replace("'", "''");
+                            builder.Append($"'{value}'");
                             break;
                         }
                     }
@@ -401,7 +402,12 @@ namespace TableSnapper
                 referencedTables[table] = referencedTables.Keys.ToList();
 
                 foreach (var referenced in referencedTables)
+                {
+                    if (fullDictionary.ContainsKey(referenced.Key))
+                        continue;
+
                     fullDictionary.Add(referenced.Key, referenced.Value);
+                }
             }
 
             return fullDictionary.Keys.TopologicalSort(table => fullDictionary[table]).ToList();
