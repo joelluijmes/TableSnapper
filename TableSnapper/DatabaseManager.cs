@@ -255,7 +255,13 @@ namespace TableSnapper
             return schema;
         }
 
-        public override int GetHashCode() => Connection?.GetHashCode() ?? 0;
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                return ((Connection != null ? Connection.GetHashCode() : 0) * 397) ^ (SchemaName != null ? SchemaName.GetHashCode() : 0);
+            }
+        }
 
         public static async Task<List<string>> GetSchemasAsync(DatabaseConnection connection)
         {
@@ -349,6 +355,8 @@ namespace TableSnapper
             return table;
         }
 
+        public Task<bool> QueryTableExistsAsync(ShallowTable table) => QueryTableExistsAsync(table.Name, table.SchemaName);
+
         public async Task<bool> QueryTableExistsAsync(string tableName, string schemaName = null)
         {
             var query = SqlQueryBuilder
@@ -429,7 +437,10 @@ namespace TableSnapper
             await Connection.ExecuteNonQueryAsync($"TRUNCATE TABLE {schemaName ?? SchemaName}.{tableName}");
         }
 
-        private bool Equals(DatabaseManager other) => Equals(Connection, other.Connection);
+        private bool Equals(DatabaseManager other)
+        {
+            return Equals(Connection, other.Connection) && string.Equals(SchemaName, other.SchemaName);
+        }
 
         //public async Task<List<Table>> QueryTablesReferencedByAsync(string tableName, string schemaName = null)
         //{
