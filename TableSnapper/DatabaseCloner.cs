@@ -1,21 +1,16 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using TableSnapper.Models;
 
 namespace TableSnapper
 {
-    internal sealed class DatabaseCloner
+    internal sealed partial class DatabaseCloner
     {
         private readonly DatabaseConnection _sourceConnection;
         private readonly DatabaseConnection _targetConnection;
 
         public DatabaseCloner(DatabaseConnection sourceConnection, DatabaseConnection targetConnection)
         {
-            if (sourceConnection == targetConnection)
-                throw new InvalidOperationException("DatabaseCloner cannot operate on the same database, use SchemaCloner to clone schema's.");
-
             _sourceConnection = sourceConnection;
             _targetConnection = targetConnection;
         }
@@ -25,39 +20,42 @@ namespace TableSnapper
             var sourceManager = new DatabaseManager(_sourceConnection);
             var targetManager = new DatabaseManager(_targetConnection);
 
-            var sourceSchemas = await DatabaseManager.GetSchemasAsync(_sourceConnection);
+            // cache the schemas 
             var targetSchemas = await DatabaseManager.GetSchemasAsync(_targetConnection);
 
-            var schemas = options.Schemas ?? await sourceManager.QuerySchemasAsync();
-            
+            var tables = options.CheckReferencedTables
+                ? await sourceManager.QueryTablesReferencedByAsync(options.Tables)
+                : options.Tables;
+
+            var schemas = tables.Select(s => s.SchemaName).Distinct();
             foreach (var schema in schemas)
             {
                 // check if schemas exist, create if target doesn't have it
-                if (!sourceSchemas.Contains(schema.Name))
-                    throw new InvalidOperationException("Cannot clone non-existing schema");
+                if (targetSchemas.Contains(schema))
+                    continue;
 
-                if (!targetSchemas.Contains(schema.Name))
-                {
-                    if (options.CreateMissingSchemas)
-                        await targetManager.CreateSchemaAsync(schema.Name);
-                    else
-                        throw new InvalidOperationException("Schema doesn't exist, enable 'CreatingMissingSchemas' to create schema");
-                }
-
-                var schemaCloner = new SchemaCloner(_sourceConnection, _targetConnection);
-                var schemaClonerOptions = new SchemaCloner.CloneOptions(schema.Name)
-                {
-                    Tables = schema.Tables ?? await sourceManager.GetTablesAsync()
-                };
-
-                await schemaCloner.CloneSchemaAsync(schemaClonerOptions);
+                if (options.CreateMissingSchemas)
+                    await targetManager.CreateSchemaAsync(schema);
+                else
+                    throw new InvalidOperationException("Schema doesn't exist, enable 'CreatingMissingSchemas' to create schema");
             }
-        }
 
-        public sealed class CloneOptions
-        {
-            public IList<Schema> Schemas { get; set; }
-            public bool CreateMissingSchemas { get; set; } = true;
+            // drop the target tables (if exists)
+            foreach (var table in tables.Reverse())
+                await targetManager.DropTableAsync(table);
+
+            // copy the data from source to target
+            foreach (var table in tables)
+            {
+                var fullTable = await sourceManager.QueryTableAsync(table);
+                var query = await sourceManager.CloneTableSqlAsync(fullTable);
+
+                // replace source schema with this one
+                if (!string.IsNullOrEmpty(sourceManager.SchemaName) && !string.IsNullOrEmpty(targetManager.SchemaName))
+                    query = query.Replace(sourceManager.SchemaName, targetManager.SchemaName);
+
+                await targetManager.Connection.ExecuteNonQueryAsync(query);
+            }
         }
     }
 }

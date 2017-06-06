@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -58,7 +59,7 @@ namespace TableSnapper
 
             return directory;
         }
-        
+
         public async Task CloneFromDirectoryAsync(string directory, string schemaName = null)
         {
             var files = Directory.GetFiles(directory).OrderBy(f => f).ToArray();
@@ -209,7 +210,7 @@ namespace TableSnapper
 
         public Task CreateSchemaAsync(string schemaName) => Connection.ExecuteNonQueryAsync($"CREATE SCHEMA {schemaName}");
 
-        public Task DropTableAsync(Table table, bool checkIfTableIsReferenced = false) =>
+        public Task DropTableAsync(ShallowTable table, bool checkIfTableIsReferenced = false) =>
             DropTableAsync(table.Name, table.SchemaName, checkIfTableIsReferenced);
 
         public async Task DropTableAsync(string tableName, string schemaName = null, bool checkIfTableIsReferenced = false)
@@ -261,7 +262,7 @@ namespace TableSnapper
             _logger.LogDebug("listing schemas..");
             var databases = new List<string>();
 
-            await connection.ExecuteQueryReaderAsync("SELECT SCHEMA_NAME, SCHEMA_OWNER FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME != SCHEMA_OWNER", 
+            await connection.ExecuteQueryReaderAsync("SELECT SCHEMA_NAME, SCHEMA_OWNER FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME != SCHEMA_OWNER",
                 reader => { databases.Add(reader["SCHEMA_NAME"].ToString()); });
 
             _logger.LogDebug($"found {databases.Count} schemas");
@@ -309,6 +310,31 @@ namespace TableSnapper
             return (await Task.WhenAll(schemaNames.Select(async schemaName => new Schema(schemaName, await GetTablesAsync(schemaName))))).ToList();
         }
 
+        public async Task<List<ShallowTable>> QueryShallowTablesAsync(string schemaName = null)
+        {
+            _logger.LogDebug("listing tables..");
+            var tables = new List<ShallowTable>();
+
+            var query = SqlQueryBuilder
+                .FromString("SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
+                .Where("TABLE_SCHEMA", schemaName ?? SchemaName)
+                .ToString();
+
+            await Connection.ExecuteQueryReaderAsync(query, tableRow =>
+            {
+                var tableName = tableRow["TABLE_NAME"].ToString();
+                var schema = tableRow["TABLE_SCHEMA"].ToString();
+
+                tables.Add(new ShallowTable(schema, tableName));
+            });
+
+            _logger.LogDebug($"found {tables.Count} tables");
+
+            return tables;
+        }
+
+        public Task<Table> QueryTableAsync(ShallowTable table) => QueryTableAsync(table.Name, table.SchemaName);
+
         public async Task<Table> QueryTableAsync(string tableName, string schemaName = null)
         {
             schemaName = schemaName ?? SchemaName;
@@ -345,47 +371,44 @@ namespace TableSnapper
 
         public async Task<List<Table>> QueryTablesAsync(string schemaName = null, bool sortOnDependency = true)
         {
-            _logger.LogDebug("listing tables..");
-            var tables = new List<Table>();
-
-            var query = SqlQueryBuilder
-                .FromString("SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
-                .Where("TABLE_SCHEMA", schemaName ?? SchemaName)
-                .ToString();
-
-            await Connection.ExecuteQueryReaderAsync(query, async tableRow =>
-            {
-                var tableName = tableRow["TABLE_NAME"].ToString();
-                var schema = tableRow["TABLE_SCHEMA"].ToString();
-
-                var table = await QueryTableAsync(tableName, schema);
-                tables.Add(table);
-            });
-
-            _logger.LogDebug($"found {tables.Count} tables");
+            var shallowTables = await QueryShallowTablesAsync(schemaName);
+            var tables = await Task.WhenAll(shallowTables.Select(async table => await QueryTableAsync(table.SchemaName, table.Name)));
 
             return SortTables(sortOnDependency, tables);
         }
 
-        public Task<List<Table>> QueryTablesReferencedByAsync(Table table, bool descendReferencedTables = true) =>
+        public Task<List<ShallowTable>> QueryTablesReferencedByAsync(ShallowTable table, bool descendReferencedTables = true) =>
             QueryTablesReferencedByAsync(table.Name, table.SchemaName, descendReferencedTables);
 
-        public async Task<List<Table>> QueryTablesReferencedByAsync(string tableName, string schemaName = null, bool descendReferencedTables = true)
+        public async Task<List<ShallowTable>> QueryTablesReferencedByAsync(IEnumerable<ShallowTable> tables)
         {
-            _logger.LogDebug($"listing dependent tables of {tableName}..");
-            var tables = new List<Table>();
+            var fullDictionary = new Dictionary<ShallowTable, List<ShallowTable>>();
 
-            var foreignKeys = await QueryTableForeignKeysAsync(tableName, schemaName);
-            foreach (var key in foreignKeys)
+            foreach (var table in tables)
             {
-                tables.Add(await QueryTableAsync(key.ForeignTable, key.ForeignSchemaName));
+                if (fullDictionary.ContainsKey(table))
+                    continue;
 
-                if (descendReferencedTables)
-                    tables.AddRange(await QueryTablesReferencedByAsync(key.ForeignTable, key.ForeignSchemaName));
+                var referencedTables = await QueryTablesReferencedByAsyncImpl(table.Name, table.SchemaName);
+                referencedTables[table] = referencedTables.Keys.ToList();
+
+                foreach (var referenced in referencedTables)
+                    fullDictionary.Add(referenced.Key, referenced.Value);
             }
 
+            return fullDictionary.Keys.TopologicalSort(table => fullDictionary[table]).ToList();
+        }
+
+        public async Task<List<ShallowTable>> QueryTablesReferencedByAsync(string tableName, string schemaName = null, bool descendReferencedTables = true)
+        {
+            _logger.LogDebug($"listing dependent tables of {tableName}..");
+            var referencedTables = await QueryTablesReferencedByAsyncImpl(tableName, schemaName, descendReferencedTables);
+            referencedTables[new ShallowTable(tableName, schemaName)] = referencedTables.Keys.ToList();
+
+            var tables = referencedTables.Keys.TopologicalSort(table => referencedTables[table]).ToList();
+
             _logger.LogDebug($"found {tables.Count} dependent tables");
-            return SortTables(tables);
+            return tables;
         }
 
         public static List<Table> SortTables(IEnumerable<Table> tables) => SortTables(true, tables);
@@ -565,6 +588,31 @@ namespace TableSnapper
             });
 
             return keys;
+        }
+
+        private async Task<Dictionary<ShallowTable, List<ShallowTable>>> QueryTablesReferencedByAsyncImpl(string tableName, string schemaName, bool descendReferencedTables = true)
+        {
+            var tables = new Dictionary<ShallowTable, List<ShallowTable>>();
+
+            var foreignKeys = await QueryTableForeignKeysAsync(tableName, schemaName);
+            foreach (var key in foreignKeys)
+            {
+                var shallowTable = new ShallowTable(key.ForeignSchemaName, key.ForeignTable);
+                if (!descendReferencedTables || tables.ContainsKey(shallowTable))
+                    continue;
+
+                var referenced = await QueryTablesReferencedByAsyncImpl(key.ForeignTable, key.ForeignSchemaName);
+                tables[shallowTable] = referenced.Keys.ToList();
+                foreach (var pair in referenced)
+                {
+                    if (tables.ContainsKey(pair.Key))
+                        Debugger.Break();
+
+                    tables[pair.Key] = pair.Value;
+                }
+            }
+
+            return tables;
         }
 
         private static List<Table> SortTables(bool sortOnDependency, IEnumerable<Table> tables)

@@ -6,6 +6,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="SchemaCloner.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Remove="Customers.sql" />
     <None Remove="Items.sql" />
     <None Remove="Orders.sql" />

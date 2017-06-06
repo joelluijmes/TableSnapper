@@ -3,19 +3,15 @@ using System.Linq;
 
 namespace TableSnapper.Models
 {
-    internal sealed class Table
+    internal sealed class Table : ShallowTable
     {
-        public Table(string schemaName, string name, List<Column> columns, List<Key> keys, List<Constraint> constraints)
+        public Table(string schemaName, string name, List<Column> columns, List<Key> keys, List<Constraint> constraints) : base(schemaName, name)
         {
-            SchemaName = schemaName;
-            Name = name;
             Columns = columns;
             Keys = keys;
             Constraints = constraints;
         }
 
-        public string SchemaName { get; }
-        public string Name { get; }
         public List<Column> Columns { get; }
         public List<Key> Keys { get; }
         public List<Constraint> Constraints { get; }
@@ -46,9 +42,7 @@ namespace TableSnapper.Models
         public static bool operator ==(Table left, Table right) => Equals(left, right);
 
         public static bool operator !=(Table left, Table right) => !Equals(left, right);
-
-        public override string ToString() => $"{SchemaName}.{Name}";
-
+        
         private bool Equals(Table other) => Equals(Columns, other.Columns) && Equals(Constraints, other.Constraints) && Equals(Keys, other.Keys) && string.Equals(Name, other.Name) && string.Equals(SchemaName, other.SchemaName);
 
         private sealed class TableStructureEqualityComparer : IEqualityComparer<Table>

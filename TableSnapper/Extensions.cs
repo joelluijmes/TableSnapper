@@ -20,8 +20,7 @@ namespace TableSnapper
 
             foreach (var item in source)
                 Visit(item, visited, sorted, dependencies, throwOnCycle);
-
-            sorted.Reverse();
+            
             return sorted;
         }
 
