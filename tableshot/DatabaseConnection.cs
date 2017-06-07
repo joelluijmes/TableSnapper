@@ -1,15 +1,13 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Data.Common;
 using System.Data.SqlClient;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
-namespace TableSnapper
+namespace tableshot
 {
-    internal sealed class DatabaseConnection : IDisposable
+    public sealed class DatabaseConnection : IDisposable
     {
-        private static readonly ILogger _logger = Program.CreateLogger<DatabaseConnection>();
+        private static readonly ILogger _logger = ApplicationLogging.CreateLogger<DatabaseConnection>();
 
         private readonly string _database;
         private readonly string _server;

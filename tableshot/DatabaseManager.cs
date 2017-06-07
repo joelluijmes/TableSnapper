@@ -7,13 +7,13 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using TableSnapper.Models;
+using tableshot.Models;
 
-namespace TableSnapper
+namespace tableshot
 {
-    internal sealed partial class DatabaseManager
+    public sealed class DatabaseManager
     {
-        private static readonly ILogger _logger = Program.CreateLogger<DatabaseManager>();
+        private static readonly ILogger _logger = ApplicationLogging.CreateLogger<DatabaseManager>();
 
         private bool _disposed;
 

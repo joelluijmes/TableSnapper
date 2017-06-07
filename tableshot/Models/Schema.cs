@@ -1,8 +1,8 @@
 ﻿using System.Collections.Generic;
 
-namespace TableSnapper.Models
+namespace tableshot.Models
 {
-    internal sealed class Schema
+    public sealed class Schema
     {
         public Schema(string name)
         {

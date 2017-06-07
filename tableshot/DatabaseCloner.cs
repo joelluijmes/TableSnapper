@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
-using TableSnapper.Models;
+using tableshot.Models;
 
-namespace TableSnapper
+namespace tableshot
 {
-    internal sealed partial class DatabaseCloner
+    public sealed partial class DatabaseCloner
     {
         private readonly DatabaseConnection _sourceConnection;
         private readonly DatabaseConnection _targetConnection;

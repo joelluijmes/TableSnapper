@@ -1,8 +1,8 @@
 ﻿using System.Collections.Generic;
 
-namespace TableSnapper.Models
+namespace tableshot.Models
 {
-    internal class Key
+    public sealed class Key
     {
         public Key(string schemaName, string tableName, string column, string keyName)
         {

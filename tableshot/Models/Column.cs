@@ -1,6 +1,6 @@
-namespace TableSnapper.Models
+namespace tableshot.Models
 {
-    internal class Column
+    public sealed class Column
     {
         public Column(string tableName, string name, int position, object defaultValue, bool isNullable, string dataTypeName, int? characterMaximumLength, int? numericPrecision, int? numericScale, bool isIdentity)
         {

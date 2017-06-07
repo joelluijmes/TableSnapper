@@ -1,6 +1,6 @@
-﻿namespace TableSnapper.Models
+﻿namespace tableshot.Models
 {
-    internal class ShallowTable
+    public class ShallowTable
     {
         public string SchemaName { get; }
         public string Name { get; }

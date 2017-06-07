@@ -1,9 +1,9 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 
-namespace TableSnapper.Models
+namespace tableshot.Models
 {
-    internal sealed class Table : ShallowTable
+    public sealed class Table : ShallowTable
     {
         public Table(string schemaName, string name, List<Column> columns, List<Key> keys, List<Constraint> constraints) : base(schemaName, name)
         {

@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "tableshot-cli": {
+      "commandName": "Project",
+      "commandLineArgs": "resolve HAOnlyTestSchema.ContractueelPrestatieTarief"
+    }
+  }
+}

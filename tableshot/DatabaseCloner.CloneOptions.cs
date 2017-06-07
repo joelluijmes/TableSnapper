@@ -1,9 +1,9 @@
 ﻿using System.Collections.Generic;
-using TableSnapper.Models;
+using tableshot.Models;
 
-namespace TableSnapper
+namespace tableshot
 {
-    internal sealed partial class DatabaseCloner
+    public sealed partial class DatabaseCloner
     {
         public sealed class DatabaseCloneOptions
         {
