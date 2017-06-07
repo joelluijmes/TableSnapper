@@ -417,7 +417,7 @@ namespace tableshot
         {
             _logger.LogDebug($"listing dependent tables of {tableName}..");
             var referencedTables = await QueryTablesReferencedByAsyncImpl(tableName, schemaName, descendReferencedTables);
-            referencedTables[new ShallowTable(tableName, schemaName)] = referencedTables.Keys.ToList();
+            referencedTables[new ShallowTable(schemaName, tableName)] = referencedTables.Keys.ToList();
 
             var tables = referencedTables.Keys.TopologicalSort(table => referencedTables[table]).ToList();
 
@@ -427,7 +427,7 @@ namespace tableshot
 
         public static List<Table> SortTables(IEnumerable<Table> tables) => SortTables(true, tables);
 
-        public Task TruncateTableAsync(Table table, bool truncateReferenced = false) =>
+        public Task TruncateTableAsync(ShallowTable table, bool truncateReferenced = false) =>
             TruncateTableAsync(table.Name, table.SchemaName, truncateReferenced);
 
         public async Task TruncateTableAsync(string tableName, string schemaName = null, bool truncateReferenced = false)
@@ -464,7 +464,7 @@ namespace tableshot
         //    return tables;
         //}
 
-        private Task<List<Column>> QueryColumnsAsync(Table table) =>
+        private Task<List<Column>> QueryColumnsAsync(ShallowTable table) =>
             QueryColumnsAsync(table.Name, table.SchemaName);
 
         private async Task<List<Column>> QueryColumnsAsync(string tableName, string schemaName = null)
@@ -511,7 +511,7 @@ namespace tableshot
             return columns;
         }
 
-        private Task<List<Key>> QueryKeysAsync(Table table) =>
+        private Task<List<Key>> QueryKeysAsync(ShallowTable table) =>
             QueryKeysAsync(table.Name, table.SchemaName);
 
         private async Task<List<Key>> QueryKeysAsync(string tableName, string schemaName = null)
@@ -533,7 +533,7 @@ namespace tableshot
             return keys;
         }
 
-        private Task<Key> QueryPrimaryKeyAsync(Table table) =>
+        private Task<Key> QueryPrimaryKeyAsync(ShallowTable table) =>
             QueryPrimaryKeyAsync(table.Name, table.SchemaName);
 
         private async Task<Key> QueryPrimaryKeyAsync(string tableName, string schemaName = null)
@@ -567,7 +567,7 @@ namespace tableshot
             return primaryKey;
         }
 
-        private Task<List<Key>> QueryTableForeignKeysAsync(Table table, string referencedTableName = null) =>
+        private Task<List<Key>> QueryTableForeignKeysAsync(ShallowTable table, string referencedTableName = null) =>
             QueryTableForeignKeysAsync(table.Name, table.SchemaName, referencedTableName);
 
         private async Task<List<Key>> QueryTableForeignKeysAsync(string tableName, string schemaName = null, string referencedTableName = null)

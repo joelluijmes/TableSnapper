@@ -86,8 +86,8 @@ namespace tableshot
             var manager = new DatabaseManager(connection);
             var referencedTables = await manager.QueryTablesReferencedByAsync(shallowTable);
 
-            Console.WriteLine("All tables depending on (in order):");
-            Console.WriteLine(referencedTables.Aggregate($"{shallowTable}", (a,b) => $"{a}\r\n {b}"));
+            _logger.LogInformation("All tables depending on (in order):");
+            _logger.LogInformation(referencedTables.Aggregate($"{shallowTable}", (a,b) => $"{a}\r\n {b}"));
 
             return 0;
         }
