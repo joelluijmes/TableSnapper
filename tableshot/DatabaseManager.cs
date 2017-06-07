@@ -26,38 +26,54 @@ namespace tableshot
         public DatabaseConnection Connection { get; }
         public string SchemaName { get; }
 
-        public async Task<string> BackupToDirectoryAsync(string baseDirectory, string schemaName = null, bool splitPerTable = true, bool skipData = false)
+        public async Task BackupToDirectoryAsync(string directory, string schemaName = null, bool splitPerTable = true, bool skipData = false)
         {
             var tables = await QueryTablesAsync(schemaName);
-            return await BackupToDirectoryAsync(baseDirectory, tables, splitPerTable, skipData);
+            await BackupToDirectoryAsync(directory, tables, splitPerTable, skipData);
         }
 
-        public async Task<string> BackupToDirectoryAsync(string baseDirectory, IList<Table> tables, bool splitPerTable = true, bool skipData = false)
+        public async Task BackupToDirectoryAsync(string directory, IList<Table> tables, bool splitPerTable = true, bool skipData = false)
         {
-            var directory = Path.Combine(baseDirectory, $"{DateTime.Now:ddMMyy-HHmmss}");
-            Directory.CreateDirectory(directory);
+            if (splitPerTable)
+            {
+                for (var i = 0; i < tables.Count; i++)
+                {
+                    var table = tables[i];
 
+                    var path = Path.Combine(directory, $"{i + 1}_{table.SchemaName}_{table.Name}.sql");
+                    await BackupToFileAsync(path, table, skipData);
+                }
+            }
+            else
+            {
+                var path = Path.Combine(directory, "0_backup.sql");
+                await BackupToFileAsync(path, tables, skipData);
+            }
+        }
+
+        public async Task BackupToFileAsync(string path, Table table, bool skipData = false)
+        {
+            var clone = skipData
+                ? CloneTableStructureSql(table)
+                : await CloneTableSqlAsync(table);
+
+            File.WriteAllText(path, clone);
+        }
+
+        public async Task BackupToFileAsync(string path, IList<Table> tables, bool skipData = false)
+        {
             for (var i = 0; i < tables.Count; i++)
             {
                 var table = tables[i];
-
                 var clone = skipData
                     ? CloneTableStructureSql(table)
                     : await CloneTableSqlAsync(table);
 
-                if (splitPerTable)
-                {
-                    var path = Path.Combine(directory, $"{i + 1}_{table.SchemaName}_{table.Name}.sql");
+                if (i == 0)
                     File.WriteAllText(path, clone);
-                }
                 else
-                {
-                    var path = Path.Combine(directory, "0_backup.sql");
                     File.AppendAllText(path, clone);
-                }
             }
-
-            return directory;
         }
 
         public async Task CloneFromDirectoryAsync(string directory, string schemaName = null)
