@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using tableshot.Models;
@@ -32,10 +33,12 @@ namespace tableshot
             var sourceManager = new DatabaseManager(_sourceConnection, options.SourceSchema);
             var targetManager = new DatabaseManager(_targetConnection, options.TargetSchema);
 
-            var tables = options.ReferencedBy != ReferencedByOptions.Disabled
-                ? await sourceManager.QueryTablesReferencedByAsync(options.Tables, options.ReferencedBy)
-                : options.Tables;
-
+            var tables = (await Task.WhenAll(options.Tables.Select(async table =>
+                table.ReferencedBy == ReferencedByOptions.Disabled
+                    ? new[] {table.Table} as IList<ShallowTable>
+                    : await sourceManager.QueryTablesReferencedByAsync(table.Table, table.ReferencedBy)
+            ))).SelectMany(s => s).ToArray();
+            
             // cache the schemas 
             var targetSchemas = await DatabaseManager.GetSchemasAsync(_targetConnection);
             var schemas = tables.Select(s => s.SchemaName)

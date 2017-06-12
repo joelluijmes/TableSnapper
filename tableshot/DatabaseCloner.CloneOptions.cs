@@ -8,23 +8,22 @@ namespace tableshot
     {
         public sealed class DatabaseCloneOptions
         {
-            public DatabaseCloneOptions(IEnumerable<ShallowTable> tables)
+            public DatabaseCloneOptions(IEnumerable<CloneTable> tables)
             {
                 Tables = tables.ToList();
             }
 
-            public DatabaseCloneOptions(IEnumerable<ShallowTable> tables, string targetSchema, string sourceSchema)
+            public DatabaseCloneOptions(IEnumerable<CloneTable> tables, string targetSchema, string sourceSchema)
             {
                 Tables = tables.ToList();
                 TargetSchema = targetSchema;
                 SourceSchema = sourceSchema;
             }
 
-            public IList<ShallowTable> Tables { get; }
+            public IList<CloneTable> Tables { get; }
             public string TargetSchema { get; }
             public string SourceSchema { get; }
             public bool CreateMissingSchemas { get; set; } = true;
-            public ReferencedByOptions ReferencedBy { get; set; } = ReferencedByOptions.FullDescend;
             public bool SkipSharedTables { get; set; } = true;
         }
     }
