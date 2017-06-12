@@ -24,7 +24,7 @@ namespace tableshot
             public string TargetSchema { get; }
             public string SourceSchema { get; }
             public bool CreateMissingSchemas { get; set; } = true;
-            public bool CheckReferencedTables { get; set; } = true;
+            public ReferencedByOptions ReferencedBy { get; set; } = ReferencedByOptions.FullDescend;
             public bool SkipSharedTables { get; set; } = true;
         }
     }

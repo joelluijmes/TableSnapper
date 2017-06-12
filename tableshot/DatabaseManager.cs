@@ -402,10 +402,10 @@ namespace tableshot
             return SortTables(sortOnDependency, tables);
         }
 
-        public Task<List<ShallowTable>> QueryTablesReferencedByAsync(ShallowTable table, bool descendReferencedTables = true) =>
-            QueryTablesReferencedByAsync(table.Name, table.SchemaName, descendReferencedTables);
+        public Task<List<ShallowTable>> QueryTablesReferencedByAsync(ShallowTable table, ReferencedByOptions options) =>
+            QueryTablesReferencedByAsync(table.Name, table.SchemaName, options);
 
-        public async Task<List<ShallowTable>> QueryTablesReferencedByAsync(IEnumerable<ShallowTable> tables)
+        public async Task<List<ShallowTable>> QueryTablesReferencedByAsync(IEnumerable<ShallowTable> tables, ReferencedByOptions options)
         {
             var fullDictionary = new Dictionary<ShallowTable, List<ShallowTable>>();
 
@@ -414,7 +414,7 @@ namespace tableshot
                 if (fullDictionary.ContainsKey(table))
                     continue;
 
-                var referencedTables = await QueryTablesReferencedByAsyncImpl(table.Name, table.SchemaName);
+                var referencedTables = await QueryTablesReferencedByAsyncImpl(table.Name, table.SchemaName, options);
                 referencedTables[table] = referencedTables.Keys.ToList();
 
                 foreach (var referenced in referencedTables)
@@ -429,10 +429,10 @@ namespace tableshot
             return fullDictionary.Keys.TopologicalSort(table => fullDictionary[table]).ToList();
         }
 
-        public async Task<List<ShallowTable>> QueryTablesReferencedByAsync(string tableName, string schemaName = null, bool descendReferencedTables = true)
+        public async Task<List<ShallowTable>> QueryTablesReferencedByAsync(string tableName, string schemaName = null, ReferencedByOptions options = ReferencedByOptions.FullDescend)
         {
             _logger.LogDebug($"listing dependent tables of {tableName}..");
-            var referencedTables = await QueryTablesReferencedByAsyncImpl(tableName, schemaName, descendReferencedTables);
+            var referencedTables = await QueryTablesReferencedByAsyncImpl(tableName, schemaName, options);
             referencedTables[new ShallowTable(schemaName, tableName)] = referencedTables.Keys.ToList();
 
             var tables = referencedTables.Keys.TopologicalSort(table => referencedTables[table]).ToList();
@@ -623,7 +623,7 @@ namespace tableshot
             return keys;
         }
 
-        private async Task<Dictionary<ShallowTable, List<ShallowTable>>> QueryTablesReferencedByAsyncImpl(string tableName, string schemaName, bool descendReferencedTables = true)
+        private async Task<Dictionary<ShallowTable, List<ShallowTable>>> QueryTablesReferencedByAsyncImpl(string tableName, string schemaName, ReferencedByOptions options)
         {
             var tables = new Dictionary<ShallowTable, List<ShallowTable>>();
 
@@ -631,10 +631,14 @@ namespace tableshot
             foreach (var key in foreignKeys)
             {
                 var shallowTable = new ShallowTable(key.ForeignSchemaName, key.ForeignTable);
-                if (!descendReferencedTables || tables.ContainsKey(shallowTable))
+
+                // check if we decend, if we do check if we limit to our own scheme only, and last skip already descended tables
+                if (options == ReferencedByOptions.Disabled || 
+                    options == ReferencedByOptions.SchemaOnly && !shallowTable.SchemaName.Equals(schemaName, StringComparison.CurrentCultureIgnoreCase) || 
+                    tables.ContainsKey(shallowTable))
                     continue;
 
-                var referenced = await QueryTablesReferencedByAsyncImpl(key.ForeignTable, key.ForeignSchemaName);
+                var referenced = await QueryTablesReferencedByAsyncImpl(key.ForeignTable, key.ForeignSchemaName, options);
                 tables[shallowTable] = referenced.Keys.ToList();
                 foreach (var pair in referenced)
                 {

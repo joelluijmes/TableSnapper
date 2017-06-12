@@ -7,6 +7,9 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.CommandLineUtils;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using Nito.AsyncEx;
 using tableshot.Commands;
 using tableshot.Models;
 
@@ -15,6 +18,8 @@ namespace tableshot
     internal class Program
     {
         private static readonly ILogger _logger;
+
+        public static JObject ConfigurationJson { get; private set; }
 
         static Program()
         {
@@ -31,17 +36,22 @@ namespace tableshot
 
             _logger = ApplicationLogging.CreateLogger<Program>();
         }
-
-        public static IConfigurationRoot Configuration { get; }
         
         private static void Main(string[] args)
         {
-            MainImpl(args);
+           MainImpl(args).Wait();
         }
 
-        private static Task MainImpl(string[] args)
+        private static async Task MainImpl(string[] args)
         {
             _logger.LogDebug("application started");
+
+            // parse the config json file
+            using (var reader = File.OpenText("config.json"))
+            using (var jsonReader = new JsonTextReader(reader))
+            {
+                ConfigurationJson = await JObject.LoadAsync(jsonReader);
+            }
 
             var commandApplication = new CommandLineApplication(false)
             {
@@ -58,8 +68,6 @@ namespace tableshot
             commandApplication.Execute(args);
 
             _logger.LogDebug("application completed");
-
-            return Task.CompletedTask;
         }
     }
 }

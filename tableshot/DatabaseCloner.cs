@@ -32,8 +32,8 @@ namespace tableshot
             var sourceManager = new DatabaseManager(_sourceConnection, options.SourceSchema);
             var targetManager = new DatabaseManager(_targetConnection, options.TargetSchema);
 
-            var tables = options.CheckReferencedTables
-                ? await sourceManager.QueryTablesReferencedByAsync(options.Tables)
+            var tables = options.ReferencedBy != ReferencedByOptions.Disabled
+                ? await sourceManager.QueryTablesReferencedByAsync(options.Tables, options.ReferencedBy)
                 : options.Tables;
 
             // cache the schemas 

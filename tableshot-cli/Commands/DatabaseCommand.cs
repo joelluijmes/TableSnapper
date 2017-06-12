@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using Microsoft.Extensions.CommandLineUtils;
+using tableshot.Models;
 
 namespace tableshot.Commands
 {
@@ -13,9 +14,10 @@ namespace tableshot.Commands
 
         public async Task Execute()
         {
-            using (Connection = await DatabaseConnection.CreateConnectionAsync(Program.Configuration["server"], Program.Configuration["database"]))
+            var connectionBuilder = Program.ConfigurationJson["source"].ToObject<ServerCredentials>().ToConnectionStringBuilder();
+            using (Connection = await DatabaseConnection.CreateConnectionAsync(connectionBuilder))
             {
-                var schema = Program.Configuration["schema"] ?? await DatabaseManager.GetDefaultSchema(Connection);
+                var schema = Program.ConfigurationJson.Value<string>("schema") ?? await DatabaseManager.GetDefaultSchema(Connection);
 
                 var manager = new DatabaseManager(Connection, schema);
                 await Execute(manager);

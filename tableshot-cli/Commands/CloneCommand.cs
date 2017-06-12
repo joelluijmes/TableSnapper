@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.CommandLineUtils;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Linq;
 using tableshot.Models;
 
@@ -29,12 +30,12 @@ namespace tableshot.Commands
             var json = await JObject.LoadAsync(jsonReader);
 
             // read the config
-            var source = json["source"].ToObject<ServerCredentials>().ToConnectionStringBuilder();
-            var target = json["target"].ToObject<ServerCredentials>().ToConnectionStringBuilder();
-            var tables = json["tables"].ToObject<CloningTables[]>();
+            var source = Program.ConfigurationJson["source"].ToObject<ServerCredentials>().ToConnectionStringBuilder();
+            var target = Program.ConfigurationJson["target"].ToObject<ServerCredentials>().ToConnectionStringBuilder();
+            var tables = Program.ConfigurationJson["tables"].ToObject<CloningTables[]>();
 
             // do the cloning
-            using (var sourceConnection =await DatabaseConnection.CreateConnectionAsync(source))
+            using (var sourceConnection = await DatabaseConnection.CreateConnectionAsync(source))
             using (var targeteConnection = await DatabaseConnection.CreateConnectionAsync(target))
             {
                 var cloner = new DatabaseCloner(sourceConnection, targeteConnection);
@@ -51,7 +52,8 @@ namespace tableshot.Commands
             public ShallowTable Table { get; set; }
 
             [JsonProperty("referenced")]
-            public bool DescendReferenced { get; set; }
+            [JsonConverter(typeof(ReferencedByOptionsConverter))]
+            public ReferencedByOptions ReferencedBy{ get; set; }
 
             private class TableNameConverter : JsonConverter
             {
@@ -69,41 +71,32 @@ namespace tableshot.Commands
 
                 public override bool CanWrite => false;
             }
-        }
 
-        private class ServerCredentials
-        {
-            [JsonProperty("server")]
-            public string Server { get; set; }
-
-            [JsonProperty("database")]
-            public string Database { get; set; }
-            
-            [JsonProperty("username")]
-            public string Username { get; set; }
-
-            [JsonProperty("password")]
-            public string Password { get; set; }
-
-            public SqlConnectionStringBuilder ToConnectionStringBuilder()
+            private class ReferencedByOptionsConverter : JsonConverter
             {
-                var builder = new SqlConnectionStringBuilder()
+                public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
                 {
-                    InitialCatalog = Database,
-                    DataSource = Server
-                };
-
-                if (Username == null && Password == null)
-                {
-                    builder.IntegratedSecurity = true;
-                }
-                else
-                {
-                    builder.UserID = Username;
-                    builder.Password = Password;
+                    throw new NotImplementedException();
                 }
 
-                return builder;
+                public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
+                {
+                    switch (reader.Value.ToString())
+                    {
+                    case "schema-only":
+                        return ReferencedByOptions.SchemaOnly;
+                    
+                    case "full-descend":
+                        return ReferencedByOptions.FullDescend;
+
+                        default:
+                            return ReferencedByOptions.Disabled;
+                    }
+                }
+
+                public override bool CanConvert(Type objectType) => false;
+
+                public override bool CanWrite => false;
             }
         }
     }

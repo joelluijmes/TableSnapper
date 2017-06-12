@@ -6,13 +6,14 @@ using tableshot.Models;
 
 namespace tableshot.Commands
 {
-    internal sealed class ExportCommand : TableCommand
+    internal sealed class ExportCommand : DatabaseCommand
     {
         private CommandOption _directoryOption;
         private CommandOption _outputOption;
         private CommandOption _referenceOption;
         private CommandOption _skipDataOption;
         private CommandArgument _tableArgument;
+        private CommandOption _schemaOnlyReferencedOption;
 
         public override string Name => "export";
         public override string Description => "Export table to file";
@@ -24,13 +25,18 @@ namespace tableshot.Commands
             _outputOption = application.Option("-o|--output", "single output file of export", CommandOptionType.SingleValue);
             _directoryOption = application.Option("-d|--directory", "directory for splitted output", CommandOptionType.SingleValue);
             _skipDataOption = application.Option("-s|--structure", "skip data", CommandOptionType.NoValue);
+            _schemaOnlyReferencedOption = application.Option("--schema-only", "limit referenced tables by same schema only", CommandOptionType.NoValue);
         }
 
         protected override async Task Execute(DatabaseManager databaseManager)
         {
-            var table = await ParseTable(_tableArgument.Value);
+            var table = Util.ParseTableName(_tableArgument.Value);
+            var referencedBy = _schemaOnlyReferencedOption.HasValue()
+                ? ReferencedByOptions.SchemaOnly
+                : ReferencedByOptions.FullDescend;
+
             var shallowTables = _referenceOption.HasValue()
-                ? await databaseManager.QueryTablesReferencedByAsync(table)
+                ? await databaseManager.QueryTablesReferencedByAsync(table, referencedBy)
                 : new[] {table} as IList<ShallowTable>;
 
             var tables = await Task.WhenAll(shallowTables.Select(databaseManager.QueryTableAsync));

@@ -2,7 +2,7 @@
   "profiles": {
     "tableshot-cli": {
       "commandName": "Project",
-      "commandLineArgs": "clone config.json"
+      "commandLineArgs": "resolve HAOnlyTestSchema.ContractueelPrestatieTarief"
     }
   }
 }
