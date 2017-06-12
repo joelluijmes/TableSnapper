@@ -63,6 +63,6 @@ namespace tableshot.Models
 
         public override string ToString() => $"{TableName}:{Name} ({DataTypeName})";
 
-        protected bool Equals(Column other) => CharacterMaximumLength == other.CharacterMaximumLength && string.Equals(DataTypeName, other.DataTypeName) && Equals(DefaultValue, other.DefaultValue) && IsIdentity == other.IsIdentity && IsNullable == other.IsNullable && string.Equals(Name, other.Name) && NumericPrecision == other.NumericPrecision && NumericScale == other.NumericScale && Position == other.Position && string.Equals(TableName, other.TableName);
+        public bool Equals(Column other) => CharacterMaximumLength == other.CharacterMaximumLength && string.Equals(DataTypeName, other.DataTypeName) && Equals(DefaultValue, other.DefaultValue) && IsIdentity == other.IsIdentity && IsNullable == other.IsNullable && string.Equals(Name, other.Name) && NumericPrecision == other.NumericPrecision && NumericScale == other.NumericScale && Position == other.Position && string.Equals(TableName, other.TableName);
     }
 }

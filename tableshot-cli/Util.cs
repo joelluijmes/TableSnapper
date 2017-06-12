@@ -1,19 +1,18 @@
-using System;
-using System.Threading.Tasks;
+﻿using System;
 using tableshot.Models;
 
-namespace tableshot.Commands {
-    internal abstract class TableCommand : DatabaseCommand
+namespace tableshot
+{
+    internal static class Util
     {
-        protected async Task<ShallowTable> ParseTable(string tableName)
+        public static ShallowTable ParseTableName(string tableName)
         {
             ShallowTable shallowTable;
             var splitted = tableName.Split('.');
             switch (splitted.Length)
             {
             case 0:
-                var schema = Program.Configuration["schema"] ?? await DatabaseManager.GetDefaultSchema(Connection);
-                shallowTable = new ShallowTable(schema, tableName);
+                shallowTable = new ShallowTable(null, tableName);
                 break;
             case 2:
                 shallowTable = new ShallowTable(splitted[0], splitted[1]);

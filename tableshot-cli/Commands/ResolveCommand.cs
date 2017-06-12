@@ -11,11 +11,11 @@ namespace tableshot.Commands
         private CommandArgument _tableArgument;
 
         public override string Name => "resolve";
-        public override string Description => "Resolves all dependent tables";
+        public override string Description => "Resolves all referenced tables";
 
         public override void Configure(CommandLineApplication application)
         {
-            _tableArgument = application.Argument("table", "table to resolve");
+            _tableArgument = application.Argument("table", "table to find referenced tables ([Schema].Table)");
         }
 
         protected override async Task Execute(DatabaseManager databaseManager)
@@ -23,7 +23,7 @@ namespace tableshot.Commands
             var shallowTable = await ParseTable(_tableArgument.Value);
             var referencedTables = await databaseManager.QueryTablesReferencedByAsync(shallowTable);
 
-            _logger.LogInformation("All tables depending on (in order):");
+            _logger.LogInformation("All referenced tables on (in order of dependency):");
             _logger.LogInformation(referencedTables.Aggregate($"{shallowTable}", (a, b) => $"{a}\r\n {b}"));
         }
     }

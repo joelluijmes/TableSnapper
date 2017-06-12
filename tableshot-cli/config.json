@@ -1,0 +1,16 @@
+﻿{
+  "source": {
+    "server": "localhost",
+    "database": "TestA"
+  },
+  "target": {
+    "server": "localhost",
+    "database": "TestB"
+  },
+  "tables": [
+    {
+      "name": "HAOnlyTestSchema.ContractueelPrestatieTarief",
+      "referenced": true 
+    }
+  ]
+}

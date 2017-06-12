@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 using tableshot.Models;
 
 namespace tableshot
@@ -7,14 +8,14 @@ namespace tableshot
     {
         public sealed class DatabaseCloneOptions
         {
-            public DatabaseCloneOptions(IList<ShallowTable> tables)
+            public DatabaseCloneOptions(IEnumerable<ShallowTable> tables)
             {
-                Tables = tables;
+                Tables = tables.ToList();
             }
 
-            public DatabaseCloneOptions(IList<ShallowTable> tables, string targetSchema, string sourceSchema)
+            public DatabaseCloneOptions(IEnumerable<ShallowTable> tables, string targetSchema, string sourceSchema)
             {
-                Tables = tables;
+                Tables = tables.ToList();
                 TargetSchema = targetSchema;
                 SourceSchema = sourceSchema;
             }

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -17,15 +18,17 @@ namespace tableshot
 
         static Program()
         {
-            // Get the configuration
-            var configuration = new ConfigurationBuilder();
-            configuration.SetBasePath(Directory.GetCurrentDirectory());
-            configuration.AddJsonFile("settings.json");
-            Configuration = configuration.Build();
-
             // Add logging
-            ApplicationLogging.LoggerFactory.AddConsole(LogLevel.Debug);
-            ApplicationLogging.LoggerFactory.AddDebug(LogLevel.Trace);
+            if (Debugger.IsAttached)
+            {
+                ApplicationLogging.LoggerFactory.AddConsole(LogLevel.Debug);
+                ApplicationLogging.LoggerFactory.AddDebug(LogLevel.Trace);
+            }
+            else
+            {
+                ApplicationLogging.LoggerFactory.AddConsole(LogLevel.Information);
+            }
+
             _logger = ApplicationLogging.CreateLogger<Program>();
         }
 
@@ -40,7 +43,7 @@ namespace tableshot
         {
             _logger.LogDebug("application started");
 
-            var commandApplication = new CommandLineApplication
+            var commandApplication = new CommandLineApplication(false)
             {
                 Name = "tableshot"
             };
@@ -50,6 +53,7 @@ namespace tableshot
             // commands
             commandApplication.Command<ExportCommand>();
             commandApplication.Command<ResolveCommand>();
+            commandApplication.Command<CloneCommand>();
 
             commandApplication.Execute(args);
 

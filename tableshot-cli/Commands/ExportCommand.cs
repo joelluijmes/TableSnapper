@@ -19,8 +19,8 @@ namespace tableshot.Commands
 
         public override void Configure(CommandLineApplication application)
         {
-            _tableArgument = application.Argument("table", "table to export");
-            _referenceOption = application.Option("-r|--referenced", "export dependent tables", CommandOptionType.NoValue);
+            _tableArgument = application.Argument("table", "table to export ([Schema].Table)");
+            _referenceOption = application.Option("-r|--referenced", "export referenced tables", CommandOptionType.NoValue);
             _outputOption = application.Option("-o|--output", "single output file of export", CommandOptionType.SingleValue);
             _directoryOption = application.Option("-d|--directory", "directory for splitted output", CommandOptionType.SingleValue);
             _skipDataOption = application.Option("-s|--structure", "skip data", CommandOptionType.NoValue);
