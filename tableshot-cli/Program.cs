@@ -1,15 +1,11 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.CommandLineUtils;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-using Nito.AsyncEx;
 using tableshot.Commands;
 using tableshot.Models;
 
@@ -18,8 +14,6 @@ namespace tableshot
     internal class Program
     {
         private static readonly ILogger _logger;
-
-        public static JObject ConfigurationJson { get; private set; }
 
         static Program()
         {
@@ -30,44 +24,88 @@ namespace tableshot
                 ApplicationLogging.LoggerFactory.AddDebug(LogLevel.Trace);
             }
             else
-            {
                 ApplicationLogging.LoggerFactory.AddConsole(LogLevel.Information);
-            }
 
             _logger = ApplicationLogging.CreateLogger<Program>();
         }
-        
+
+        public static ConfigurationModel Configuration { get; private set; }
+
+        private static CommandLineApplication AddCommand<TCommand>(CommandLineApplication application)
+            where TCommand : ICommand
+        {
+            var command = (ICommand) Activator.CreateInstance<TCommand>();
+
+            return application.Command(command.Name, configuration =>
+            {
+                configuration.Description = command.Description;
+                configuration.HelpOption("-h|--help");
+
+                // options for all commands
+                var configOption = configuration.Option("--config", "path to config file", CommandOptionType.SingleValue);
+                var sourceServerOption = configuration.Option("--source", "override source database (<username>:<pass>@<server>:<database>)", CommandOptionType.SingleValue);
+                var targetServerOption = configuration.Option("--target", "override target database (<username>:<pass>@<server>:<database>)", CommandOptionType.SingleValue);
+                var tablesOption = configuration.Option("--table", "override tables to clone ([Schema].Table:<none|schema|full>)", CommandOptionType.MultipleValue);
+
+                // specific command configuration
+                command.Configure(configuration);
+
+                configuration.OnExecute(async () =>
+                {
+                    // parse the config json file
+                    var path = configOption.HasValue()
+                        ? configOption.Value()
+                        : "config.json";
+
+                    if (File.Exists(path))
+                    {
+                        using (var reader = File.OpenText(path))
+                        using (var jsonReader = new JsonTextReader(reader))
+                        {
+                            var serializer = new JsonSerializer();
+                            Configuration = serializer.Deserialize<ConfigurationModel>(jsonReader);
+                        }
+                    }
+
+                    if (sourceServerOption.HasValue())
+                        Configuration.SourceCredentials = Util.ParseCredentials(sourceServerOption.Value());
+                    if (targetServerOption.HasValue())
+                        Configuration.TargetCredentials = Util.ParseCredentials(targetServerOption.Value());
+                    if (tablesOption.HasValue())
+                        Configuration.Tables = tablesOption.Values.Select(Util.ParseCloneTable).ToArray();
+
+                    // execute the actual command
+                    await command.Execute();
+                    return 0;
+                });
+            });
+        }
+
         private static void Main(string[] args)
         {
-           MainImpl(args).Wait();
+            MainImpl(args).Wait();
         }
 
         private static async Task MainImpl(string[] args)
         {
-            _logger.LogDebug("application started");
-
-            // parse the config json file
-            using (var reader = File.OpenText("config.json"))
-            using (var jsonReader = new JsonTextReader(reader))
-            {
-                ConfigurationJson = await JObject.LoadAsync(jsonReader);
-            }
+            _logger.LogInformation("application started");
 
             var commandApplication = new CommandLineApplication(false)
             {
-                Name = "tableshot"
+                Name = "tableshot",
+                Description = "program to clone selective tables to another database"
             };
 
             commandApplication.HelpOption("-h|--help");
 
             // commands
-            commandApplication.Command<ExportCommand>();
-            commandApplication.Command<ResolveCommand>();
-            commandApplication.Command<CloneCommand>();
+            AddCommand<ExportCommand>(commandApplication);
+            AddCommand<ResolveCommand>(commandApplication);
+            AddCommand<CloneCommand>(commandApplication);
 
             commandApplication.Execute(args);
 
-            _logger.LogDebug("application completed");
+            _logger.LogInformation("application completed");
         }
     }
 }

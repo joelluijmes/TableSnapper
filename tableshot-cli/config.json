@@ -10,7 +10,7 @@
   "tables": [
     {
       "name": "HAOnlyTestSchema.ContractueelPrestatieTarief",
-      "referenced": "disabled" 
+      "referenced": "schema-only" 
     }
   ]
 }

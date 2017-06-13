@@ -333,14 +333,14 @@ namespace tableshot
             return (await Task.WhenAll(schemaNames.Select(async schemaName => new Schema(schemaName, await GetTablesAsync(schemaName))))).ToList();
         }
 
-        public async Task<List<ShallowTable>> QueryShallowTablesAsync(string schemaName = null)
+        public async Task<List<ShallowTable>> QueryShallowTablesAsync(string schemaName)
         {
             _logger.LogDebug("listing tables..");
             var tables = new List<ShallowTable>();
 
             var query = SqlQueryBuilder
                 .FromString("SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
-                .Where("TABLE_SCHEMA", schemaName ?? SchemaName)
+                .Where("TABLE_SCHEMA", schemaName)
                 .ToString();
 
             await Connection.ExecuteQueryReaderAsync(query, tableRow =>

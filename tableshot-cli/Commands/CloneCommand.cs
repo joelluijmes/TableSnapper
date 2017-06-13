@@ -23,16 +23,16 @@ namespace tableshot.Commands
         public async Task Execute()
         { 
             // read the config
-            var source = Program.ConfigurationJson["source"].ToObject<ServerCredentials>().ToConnectionStringBuilder();
-            var target = Program.ConfigurationJson["target"].ToObject<ServerCredentials>().ToConnectionStringBuilder();
-            var tables = Program.ConfigurationJson["tables"].ToObject<JsonCloneTable[]>();
+            var source = Program.Configuration.SourceCredentials.ToConnectionStringBuilder();
+            var target = Program.Configuration.TargetCredentials.ToConnectionStringBuilder();
+            var tables = Program.Configuration.Tables;
 
             // do the cloning
             using (var sourceConnection = await DatabaseConnection.CreateConnectionAsync(source))
             using (var targetConnection = await DatabaseConnection.CreateConnectionAsync(target))
             {
                 var cloner = new DatabaseCloner(sourceConnection, targetConnection);
-                var options = new DatabaseCloner.DatabaseCloneOptions(tables.Select(table => table.ToCloneTable()));
+                var options = new DatabaseCloner.DatabaseCloneOptions(tables);
 
                 await cloner.CloneAsync(options);
             }

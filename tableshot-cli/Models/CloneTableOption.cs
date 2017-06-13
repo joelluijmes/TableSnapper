@@ -3,7 +3,7 @@ using Newtonsoft.Json;
 
 namespace tableshot.Models
 {
-    internal sealed class JsonCloneTable
+    internal sealed class CloneTableOption
     {
         [JsonProperty("name")]
         [JsonConverter(typeof(TableNameConverter))]
@@ -18,8 +18,7 @@ namespace tableshot.Models
             ReferencedBy = ReferencedBy,
             Table = Table
         };
-
-
+        
         private class TableNameConverter : JsonConverter
         {
             public override bool CanWrite => false;
@@ -42,19 +41,10 @@ namespace tableshot.Models
 
             public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
             {
-                switch (reader.Value.ToString())
-                {
-                case "schema-only":
-                    return ReferencedByOptions.SchemaOnly;
-
-                case "full-descend":
-                    return ReferencedByOptions.FullDescend;
-
-                default:
-                    return ReferencedByOptions.Disabled;
-                }
+                var value = reader.Value.ToString();
+                return Util.ParseReferencedByOptions(value);
             }
-
+            
             public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
             {
                 throw new NotImplementedException();

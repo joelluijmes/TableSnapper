@@ -14,10 +14,10 @@ namespace tableshot.Commands
 
         public async Task Execute()
         {
-            var connectionBuilder = Program.ConfigurationJson["source"].ToObject<ServerCredentials>().ToConnectionStringBuilder();
-            using (Connection = await DatabaseConnection.CreateConnectionAsync(connectionBuilder))
+            var source = Program.Configuration.SourceCredentials.ToConnectionStringBuilder();
+            using (Connection = await DatabaseConnection.CreateConnectionAsync(source))
             {
-                var schema = Program.ConfigurationJson.Value<string>("schema") ?? await DatabaseManager.GetDefaultSchema(Connection);
+                var schema = Program.Configuration.Schema ?? await DatabaseManager.GetDefaultSchema(Connection);
 
                 var manager = new DatabaseManager(Connection, schema);
                 await Execute(manager);

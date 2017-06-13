@@ -22,7 +22,7 @@ namespace tableshot.Models
             var builder = new SqlConnectionStringBuilder()
             {
                 InitialCatalog = Database,
-                DataSource = Server
+                DataSource = Server ?? "localhost"
             };
 
             if (Username == null && Password == null)

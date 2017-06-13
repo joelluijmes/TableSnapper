@@ -60,7 +60,6 @@ namespace tableshot
                     throw new InvalidOperationException("Schema doesn't exist, enable 'CreatingMissingSchemas' to create schema");
             }
 
-            // cache the tables
             bool SkipShared(ShallowTable table) => options.SkipSharedTables && _targetConnection == _sourceConnection && table.SchemaName != sourceManager.SchemaName;
             string TargetSchemaName(ShallowTable table) => sourceManager == targetManager ? table.SchemaName : (options.TargetSchema ?? table.SchemaName);
             
