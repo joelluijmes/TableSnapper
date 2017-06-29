@@ -102,6 +102,7 @@ namespace tableshot
             AddCommand<ExportCommand>(commandApplication);
             AddCommand<ResolveCommand>(commandApplication);
             AddCommand<CloneCommand>(commandApplication);
+            AddCommand<FindColumns>(commandApplication);
 
             commandApplication.Execute(args);
 

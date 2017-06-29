@@ -480,10 +480,10 @@ namespace tableshot
         //    return tables;
         //}
 
-        private Task<List<Column>> QueryColumnsAsync(ShallowTable table) =>
+        public Task<List<Column>> QueryColumnsAsync(ShallowTable table) =>
             QueryColumnsAsync(table.Name, table.SchemaName);
 
-        private async Task<List<Column>> QueryColumnsAsync(string tableName, string schemaName = null)
+        public async Task<List<Column>> QueryColumnsAsync(string tableName, string schemaName = null)
         {
             _logger.LogDebug($"listing columns of {tableName}..");
             var columns = new List<Column>();

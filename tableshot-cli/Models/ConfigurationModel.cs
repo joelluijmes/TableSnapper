@@ -18,6 +18,9 @@ namespace tableshot.Models
         [JsonConverter(typeof(TablesConverter))]
         public IList<CloneTable> Tables { get; set; }
 
+        [JsonProperty("columns")]
+        public IList<string> Columns { get; set; }
+
         [JsonProperty("schema")]
         public string Schema { get; set; }
 
