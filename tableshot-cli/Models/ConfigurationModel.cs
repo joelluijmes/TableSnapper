@@ -21,8 +21,8 @@ namespace tableshot.Models
         [JsonProperty("columns")]
         public IList<string> Columns { get; set; }
 
-        [JsonProperty("schema")]
-        public string Schema { get; set; }
+        [JsonProperty("schemas")]
+        public IList<string> Schemas { get; set; }
 
         private class TablesConverter : JsonConverter
         {

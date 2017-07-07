@@ -9,14 +9,17 @@ namespace tableshot.Commands
     internal abstract class DatabaseCommand : ICommand
     {
         protected DatabaseConnection Connection;
-
+        
+        protected SchemaScope Scope { get; private set; }
         public abstract string Name { get; }
         public abstract string Description { get; }
         public abstract void Configure(CommandLineApplication application);
 
         public async Task Execute()
         {
+            Scope = new SchemaScope(Program.Configuration.Schemas);
             var source = Program.Configuration.SourceCredentials.ToConnectionStringBuilder();
+
             using (Connection = await DatabaseConnection.CreateConnectionAsync(source))
             {
                 var manager = new DatabaseManager(Connection);
@@ -30,7 +33,7 @@ namespace tableshot.Commands
                         continue;
                     }
 
-                    var tables = await manager.ListShallowTablesAsync(tableConfiguration.Table.Name, null);
+                    var tables = await manager.ListShallowTablesAsync(tableConfiguration.Table.Name, Scope);
                     tableConfigurations.AddRange(tables.Select(table => new TableConfiguration
                     {
                         Table = table,

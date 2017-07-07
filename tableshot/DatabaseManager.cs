@@ -121,6 +121,30 @@ namespace tableshot
             return tables;
         }
 
+        public async Task<List<ShallowTable>> ListShallowTablesAsync(string tableName, SchemaScope schemaScope)
+        {
+            _logger.LogDebug("listing tables..");
+            var tables = new List<ShallowTable>();
+
+            var query = SqlQueryBuilder
+                .FromString("SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
+                .WhereIn(schemaScope, "TABLE_SCHEMA")
+                .Where(tableName, "TABLE_NAME")
+                .ToString();
+
+            await Connection.ExecuteQueryReaderAsync(query, tableRow =>
+            {
+                var rowTable = tableRow["TABLE_NAME"].ToString();
+                var rowSchema = tableRow["TABLE_SCHEMA"].ToString();
+
+                tables.Add(new ShallowTable(rowSchema, rowTable));
+            });
+
+            _logger.LogDebug($"found {tables.Count} tables");
+
+            return tables;
+        }
+
         public Task<List<Column>> ListTableColumnsAsync(ShallowTable table)
         {
             return ListTableColumnsAsync(table.Name, table.SchemaName);
@@ -206,12 +230,12 @@ namespace tableshot
             return TopologicalSort(tables, sortOnDependency);
         }
 
-        public Task<List<ShallowTable>> ListTablesReferencedByAsync(ShallowTable table, ReferencedByOptions options)
+        public Task<List<ShallowTable>> ListTablesReferencedByAsync(ShallowTable table, ReferencedByOptions options, SchemaScope schemaScope)
         {
-            return ListTablesReferencedByAsync(table.Name, table.SchemaName, options);
+            return ListTablesReferencedByAsync(table.Name, table.SchemaName, options, schemaScope);
         }
 
-        public async Task<List<ShallowTable>> ListTablesReferencedByAsync(string tableName, string schemaName, ReferencedByOptions options)
+        public async Task<List<ShallowTable>> ListTablesReferencedByAsync(string tableName, string schemaName, ReferencedByOptions options, SchemaScope schemaScope)
         {
             if (tableName == null)
                 throw new ArgumentNullException(nameof(tableName));
@@ -219,7 +243,7 @@ namespace tableshot
                 throw new ArgumentNullException(nameof(schemaName));
 
             _logger.LogDebug($"listing dependent tables of {schemaName}.{tableName}..");
-            var referencedTables = await ListTablesReferencedByAsyncImpl(tableName, schemaName, options);
+            var referencedTables = await ListTablesReferencedByAsyncImpl(tableName, schemaName, options, schemaScope);
             referencedTables[new ShallowTable(schemaName, tableName)] = referencedTables.Keys.ToList();
 
             var sorted = referencedTables.Keys.TopologicalSort(table => referencedTables[table], false);
@@ -305,7 +329,7 @@ namespace tableshot
             return anyRow;
         }
 
-        public Task TruncateTableAsync(ShallowTable table, bool truncateReferenced = false)
+        public Task TruncateTableAsync(ShallowTable table, bool truncateReferenced)
         {
             return TruncateTableAsync(table.Name, table.SchemaName, truncateReferenced);
         }
@@ -319,7 +343,7 @@ namespace tableshot
 
             if (truncateReferenced)
             {
-                var referenced = await ListTablesReferencedByAsync(tableName, schemaName, ReferencedByOptions.Descending);
+                var referenced = await ListTablesReferencedByAsync(tableName, schemaName, ReferencedByOptions.Descending, SchemaScope.All);
 
                 foreach (var table in referenced)
                     await TruncateTableAsync(table.Name, table.SchemaName, true);
@@ -408,22 +432,25 @@ namespace tableshot
             return keys;
         }
 
-        private Task<Dictionary<ShallowTable, List<ShallowTable>>> ListTablesReferencedByAsyncImpl(string tableName, string schemaName, ReferencedByOptions options)
+        private Task<Dictionary<ShallowTable, List<ShallowTable>>> ListTablesReferencedByAsyncImpl(string tableName, string schemaName, ReferencedByOptions options, SchemaScope schemaScope)
         {
-            return ListTablesReferencedByAsyncImpl(tableName, schemaName, options, new Dictionary<ShallowTable, List<ShallowTable>>());
+            return ListTablesReferencedByAsyncImpl(tableName, schemaName, options, schemaScope, new Dictionary<ShallowTable, List<ShallowTable>>());
         }
         
-        private Task<Dictionary<ShallowTable, List<ShallowTable>>> ListTablesReferencedByAsyncImpl(ShallowTable table, ReferencedByOptions options, Dictionary<ShallowTable, List<ShallowTable>> tables)
+        private Task<Dictionary<ShallowTable, List<ShallowTable>>> ListTablesReferencedByAsyncImpl(ShallowTable table, ReferencedByOptions options, SchemaScope schemaScope, Dictionary<ShallowTable, List<ShallowTable>> tables)
         {
-            return ListTablesReferencedByAsyncImpl(table.Name, table.SchemaName, options, tables);
+            return ListTablesReferencedByAsyncImpl(table.Name, table.SchemaName, options, schemaScope, tables);
         }
 
-        private async Task<Dictionary<ShallowTable, List<ShallowTable>>> ListTablesReferencedByAsyncImpl(string tableName, string schemaName, ReferencedByOptions options, Dictionary<ShallowTable, List<ShallowTable>> tables)
+        private async Task<Dictionary<ShallowTable, List<ShallowTable>>> ListTablesReferencedByAsyncImpl(string tableName, string schemaName, ReferencedByOptions options, SchemaScope schemaScope, Dictionary<ShallowTable, List<ShallowTable>> tables)
         {
             if (options == ReferencedByOptions.Disabled)
                 throw new ArgumentException("Referenced is disabled", nameof(options));
             if (!options.HasFlag(ReferencedByOptions.Ascending) && !options.HasFlag(ReferencedByOptions.Descending))
                 throw new ArgumentException("Can't resolve Referenced Tables without selecting either Descending (referenced to) or Ascending (referenced by)", nameof(options));
+
+            if (!schemaScope.Contains(schemaName))
+                return tables;
 
             var currentTable = new ShallowTable(schemaName, tableName);
             tables[currentTable] = new List<ShallowTable>();
@@ -441,10 +468,11 @@ namespace tableshot
                 
                 async Task ProcessTable(ShallowTable table)
                 {
-                    if (tables.ContainsKey(table))
+                    // only descend/ascend in the specified scope
+                    if (tables.ContainsKey(table) || !schemaScope.Contains(table.SchemaName))
                         return;
 
-                    var referenced = await ListTablesReferencedByAsyncImpl(table, options, tables);
+                    var referenced = await ListTablesReferencedByAsyncImpl(table, options, schemaScope, tables);
                     // throw new NotImplementedException($"Result Referenced Tables already contained definition for {foreignTable}, how to deal with this?");
 
                     tables[table] = referenced.Keys.ToList();
@@ -577,6 +605,26 @@ namespace tableshot
                 _stringBuilder.Append(_appendWhere
                     ? $"\r\rAND ({clause})"
                     : $"\r\nWHERE ({clause})"
+                );
+
+                _appendWhere = true;
+                return this;
+            }
+
+            public SqlQueryBuilder WhereIn(IEnumerable<object> values, string key)
+            {
+                if (values == null)
+                    throw new ArgumentNullException(nameof(values));
+
+                var cached = values.ToArray();
+                if (!cached.Any())
+                    return this;
+
+                var clause = cached.Aggregate((acc, cur) => $"{acc}, {cur}");
+
+                _stringBuilder.Append(_appendWhere
+                    ? $"\r\rAND {key}='({clause})'"
+                    : $"\r\nWHERE {key}='({clause})'"
                 );
 
                 _appendWhere = true;

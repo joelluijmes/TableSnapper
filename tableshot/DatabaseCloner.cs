@@ -36,7 +36,7 @@ namespace tableshot
             var tables = (await Task.WhenAll(options.Tables.Select(async table =>
                 table.ReferencedBy == ReferencedByOptions.Disabled
                     ? new[] {table.Table} as IList<ShallowTable>
-                    : await sourceManager.ListTablesReferencedByAsync(table.Table, table.ReferencedBy)
+                    : await sourceManager.ListTablesReferencedByAsync(table.Table, table.ReferencedBy, SchemaScope.All)
             )))
             .SelectMany(s => s)
             .ToArray();

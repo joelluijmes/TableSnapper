@@ -27,7 +27,7 @@ namespace tableshot.Commands
             foreach (var table in Program.Configuration.TableConfigurations)
             {
                 var shallowTables = table.ReferencedBy != ReferencedByOptions.Disabled
-                    ? await databaseManager.ListTablesReferencedByAsync(table.Table, table.ReferencedBy)
+                    ? await databaseManager.ListTablesReferencedByAsync(table.Table, table.ReferencedBy, Scope)
                     : new[] { table.Table } as IList<ShallowTable>;
 
                 var tables = await Task.WhenAll(shallowTables.Select(databaseManager.QueryTableAsync));
