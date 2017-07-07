@@ -14,13 +14,15 @@ namespace tableshot.Commands
     internal sealed class CloneCommand : ICommand
     {
         private CommandOption _createMissing;
+        private CommandOption _checkReferenced;
 
         public string Name => "clone";
         public string Description => "clones tables and data between schemas and databases";
 
         public void Configure(CommandLineApplication application)
         {
-            _createMissing = application.Option("-c|--create-missing", "creates missing schemas (default false)", CommandOptionType.NoValue);
+            _createMissing = application.Option("--create-missing", "creates missing schemas (default false)", CommandOptionType.NoValue);
+            _checkReferenced = application.Option("--check-referenced", "check referenced tables before droping them (default false)", CommandOptionType.NoValue);
         }
 
         public async Task Execute()
@@ -37,7 +39,8 @@ namespace tableshot.Commands
                 var cloner = new DatabaseCloner(sourceConnection, targetConnection);
                 var options = new DatabaseCloner.DatabaseCloneOptions(tables)
                 {
-                    CreateMissingSchemas = _createMissing.HasValue()
+                    CreateMissingSchemas = _createMissing.HasValue(),
+                    CheckReferencedTables = _checkReferenced.HasValue()
                 };
 
                 await cloner.CloneAsync(options);

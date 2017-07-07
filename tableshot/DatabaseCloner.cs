@@ -70,7 +70,7 @@ namespace tableshot
                 if (SkipShared(table))
                     continue;
 
-                await targetManager.DropTableAsync(table.Name, TargetSchemaName(table));
+                await targetManager.DropTableAsync(table.Name, TargetSchemaName(table), options.CheckReferencedTables);
             }
 
             // copy the data from source to target
