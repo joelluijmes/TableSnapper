@@ -27,7 +27,7 @@ namespace tableshot.Commands
             foreach (var table in Program.Configuration.Tables)
             {
                 var shallowTables = table.ReferencedBy != ReferencedByOptions.Disabled
-                    ? await databaseManager.QueryTablesReferencedByAsync(table.Table, table.ReferencedBy)
+                    ? await databaseManager.ListTablesReferencedByAsync(table.Table, table.ReferencedBy)
                     : new[] { table.Table } as IList<ShallowTable>;
 
                 var tables = await Task.WhenAll(shallowTables.Select(databaseManager.QueryTableAsync));
@@ -36,10 +36,11 @@ namespace tableshot.Commands
                 var outputDirectory = _directoryOption.Value();
                 var skipData = _skipDataOption.HasValue();
 
+                var cloneManager = new DatabaseCloneManager(databaseManager);
                 if (!string.IsNullOrEmpty(outputFile))
-                    await databaseManager.BackupToFileAsync(outputFile, tables, skipData);
+                    await cloneManager.BackupToFileAsync(outputFile, tables, skipData);
                 if (!string.IsNullOrEmpty(outputDirectory))
-                    await databaseManager.BackupToDirectoryAsync(outputDirectory, tables, true, skipData);
+                    await cloneManager.BackupToDirectoryAsync(outputDirectory, tables, true, skipData);
             }
         }
     }

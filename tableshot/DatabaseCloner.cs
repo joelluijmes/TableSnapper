@@ -12,9 +12,7 @@ namespace tableshot
         private readonly DatabaseConnection _targetConnection;
 
         public DatabaseCloner(DatabaseConnection connection) : this(connection, connection)
-        {
-            
-        }
+        { }
 
         public DatabaseCloner(DatabaseConnection sourceConnection, DatabaseConnection targetConnection)
         {
@@ -31,16 +29,18 @@ namespace tableshot
                 throw new InvalidOperationException("Both or none Schema names should be given but not one.");
 
             var sourceManager = new DatabaseManager(_sourceConnection);
+            var sourceCloneManager = new DatabaseCloneManager(sourceManager);
+
             var targetManager = new DatabaseManager(_targetConnection);
 
             var tables = (await Task.WhenAll(options.Tables.Select(async table =>
                 table.ReferencedBy == ReferencedByOptions.Disabled
                     ? new[] {table.Table} as IList<ShallowTable>
-                    : await sourceManager.QueryTablesReferencedByAsync(table.Table, table.ReferencedBy)
+                    : await sourceManager.ListTablesReferencedByAsync(table.Table, table.ReferencedBy)
             ))).SelectMany(s => s).ToArray();
             
             // cache the schemas 
-            var targetSchemas = await DatabaseManager.GetSchemasAsync(_targetConnection);
+            var targetSchemas = await DatabaseManager.ListSchemasAsync(_targetConnection);
             var schemas = tables.Select(s => s.SchemaName)
                 .Distinct(StringComparer.CurrentCultureIgnoreCase)
                 .Where(schema => schema != options.SourceSchema)
@@ -77,11 +77,11 @@ namespace tableshot
             foreach (var table in tables)
             {
                 // same database -> don't copy shared tables
-                if (SkipShared(table) && await targetManager.QueryTableExistsAsync(table))
+                if (SkipShared(table) && await targetManager.TableExistsAsync(table))
                     continue;
 
                 var fullTable = await sourceManager.QueryTableAsync(table);
-                var query = await sourceManager.CloneTableSqlAsync(fullTable);
+                var query = await sourceCloneManager.CloneTableSqlAsync(fullTable);
 
                 // replace source schema with this one
                 if (table.SchemaName == options.SourceSchema && !string.IsNullOrEmpty(options.TargetSchema))
@@ -90,5 +90,7 @@ namespace tableshot
                 await targetManager.Connection.ExecuteNonQueryAsync(query);
             }
         }
+
+
     }
 }

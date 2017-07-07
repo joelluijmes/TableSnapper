@@ -38,12 +38,12 @@ namespace tableshot.Commands
             {
                 var manager = new DatabaseManager(sourceConnection);
 
-                var tables = await manager.QueryShallowTablesAsync(Program.Configuration.Schema);
+                var tables = await manager.ListShallowTablesAsync(Program.Configuration.Schema);
                 var tableColumns = await Task.WhenAll(
                     tables.Select(async table => new
                     {
                         table = table,
-                        columns = await manager.QueryColumnsAsync(table)
+                        columns = await manager.ListTableColumnsAsync(table)
                     }));
 
                 foreach (var column in columnNames)

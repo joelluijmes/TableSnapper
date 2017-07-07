@@ -15,215 +15,14 @@ namespace tableshot
     public sealed class DatabaseManager
     {
         private static readonly ILogger _logger = ApplicationLogging.CreateLogger<DatabaseManager>();
-
-        private bool _disposed;
-
+        
         public DatabaseManager(DatabaseConnection connection)
         {
             Connection = connection;
         }
 
         public DatabaseConnection Connection { get; }
-
-        public async Task BackupToDirectoryAsync(string directory, string schemaName, bool splitPerTable = true, bool skipData = false)
-        {
-            var tables = await QueryTablesAsync(schemaName);
-            await BackupToDirectoryAsync(directory, tables, splitPerTable, skipData);
-        }
-
-        public async Task BackupToDirectoryAsync(string directory, IList<Table> tables, bool splitPerTable = true, bool skipData = false)
-        {
-            if (splitPerTable)
-            {
-                for (var i = 0; i < tables.Count; i++)
-                {
-                    var table = tables[i];
-
-                    var path = Path.Combine(directory, $"{i + 1}_{table.SchemaName}_{table.Name}.sql");
-                    await BackupToFileAsync(path, table, skipData);
-                }
-            }
-            else
-            {
-                var path = Path.Combine(directory, "0_backup.sql");
-                await BackupToFileAsync(path, tables, skipData);
-            }
-        }
-
-        public async Task BackupToFileAsync(string path, Table table, bool skipData = false)
-        {
-            var clone = skipData
-                ? CloneTableStructureSql(table)
-                : await CloneTableSqlAsync(table);
-
-            File.WriteAllText(path, clone);
-        }
-
-        public async Task BackupToFileAsync(string path, IList<Table> tables, bool skipData = false)
-        {
-            for (var i = 0; i < tables.Count; i++)
-            {
-                var table = tables[i];
-                var clone = skipData
-                    ? CloneTableStructureSql(table)
-                    : await CloneTableSqlAsync(table);
-
-                if (i == 0)
-                    File.WriteAllText(path, clone);
-                else
-                    File.AppendAllText(path, clone);
-            }
-        }
-
-        public async Task CloneFromDirectoryAsync(string directory, string schemaName)
-        {
-            var files = Directory.GetFiles(directory).OrderBy(f => f).ToArray();
-            if (files.Any(f => !Regex.IsMatch(f, "\\d+_.*\\.sql")))
-                throw new InvalidOperationException("Directory contains one or more invalid files to import");
-
-            foreach (var file in files)
-            {
-                var content = File.ReadAllText(file);
-
-                // content = content.Replace("[SCHEMA_NAME]", $"{schemaName ?? _schemaName}");
-                await Connection.ExecuteNonQueryAsync(content);
-            }
-        }
-
-        public async Task<string> CloneTableDataSqlAsync(Table table)
-        {
-            _logger.LogDebug($"cloning table data of {table}..");
-
-            var builder = new StringBuilder();
-
-            // we need to explicity set 'IDENTITY_INSERT' on before we can insert values in a table
-            // with a identity column
-            var shouldDisableIdentityInsert = table.Columns.Any(c => c.IsIdentity);
-
-            if (shouldDisableIdentityInsert)
-                builder.AppendLine($"SET IDENTITY_INSERT {table.SchemaName}.{table.Name} ON");
-
-            await Connection.ExecuteQueryReaderAsync($"SELECT * FROM {table.SchemaName}.{table.Name}", reader =>
-            {
-                builder.Append($"INSERT {table.SchemaName}.{table.Name} (");
-                builder.Append(table.Columns.Select(c => c.Name).Aggregate((a, b) => $"{a}, {b}"));
-                builder.Append(") VALUES (");
-
-                for (var i = 0; i < reader.FieldCount; ++i)
-                {
-                    if (reader.IsDBNull(i))
-                        builder.Append("NULL");
-                    else
-                    {
-                        switch (reader[i])
-                        {
-                        case byte[] bytes:
-                            var hexString = bytes.Select(x => x.ToString("X2")).Aggregate("0x", (a, b) => $"{a}{b}");
-                            var length = table.Columns[i].CharacterMaximumLength;
-
-                            builder.Append($"CONVERT(varbinary({(length == -1 ? "MAX" : length.ToString())}), '{hexString}')");
-                            break;
-
-                        case Guid guid:
-                            builder.Append($"CONVERT(uniqueidentifier, '{guid}')");
-                            break;
-                        default:
-                            var value = reader[i].ToString().Replace("'", "''");
-                            builder.Append($"'{value}'");
-                            break;
-                        }
-                    }
-
-                    if (i < reader.FieldCount - 1)
-                        builder.Append(", ");
-                }
-
-                builder.AppendLine(")");
-            });
-
-            if (shouldDisableIdentityInsert)
-                builder.AppendLine($"SET IDENTITY_INSERT {table.SchemaName}.{table.Name} OFF");
-
-            _logger.LogDebug($"cloned table data of {table}!");
-            return builder.ToString();
-        }
-
-        public async Task<string> CloneTableSqlAsync(Table table)
-        {
-            _logger.LogDebug($"cloning full table {table}..");
-            var builder = new StringBuilder();
-
-            var structureSql = CloneTableStructureSql(table);
-            var dataSql = await CloneTableDataSqlAsync(table);
-
-            builder.AppendLine(structureSql);
-            builder.AppendLine();
-            builder.AppendLine(dataSql);
-
-            _logger.LogDebug($"cloned full table {table}!");
-            return builder.ToString();
-        }
-
-        public string CloneTableStructureSql(Table table)
-        {
-            _logger.LogDebug($"cloning table structure of {table}..");
-
-            var builder = new StringBuilder();
-            builder.AppendLine($"CREATE TABLE {table.SchemaName}.{table.Name}(");
-
-            var primaryKey = table.Keys.SingleOrDefault(key => key.IsPrimaryKey);
-            var foreignKeys = table.Keys.Where(key => key.IsForeignKey).ToList();
-
-            for (var i = 0; i < table.Columns.Count; i++)
-            {
-                var column = table.Columns[i];
-                // COLUMN
-                builder.Append($"  {column.Name} {column.DataTypeName} ");
-                if (column.CharacterMaximumLength.HasValue)
-                {
-                    builder.Append(column.CharacterMaximumLength == -1
-                        ? "(max)"
-                        : $"({column.CharacterMaximumLength}) ");
-                }
-
-                if (column.DataTypeName == "decimal")
-                {
-                    if (column.NumericPrecision.HasValue && !column.NumericScale.HasValue)
-                        builder.Append($"({column.NumericPrecision}) ");
-                    else if (column.NumericPrecision.HasValue && column.NumericScale.HasValue)
-                        builder.Append($"({column.NumericPrecision}, {column.NumericScale}) ");
-                    else
-                        throw new InvalidOperationException("Unable to parse decimal");
-                }
-
-                if (column.IsIdentity)
-                    builder.Append("IDENTITY ");
-
-                if (!column.IsNullable)
-                    builder.Append("NOT NULL ");
-
-                // DEFAULT VALUE
-                if (column.DefaultValue != null)
-                    builder.Append($"DEFAULT({column.DefaultValue})");
-
-                // KEY
-                if (primaryKey != null && primaryKey.Column == column.Name)
-                    builder.Append(" PRIMARY KEY");
-
-                var foreignKey = foreignKeys.SingleOrDefault(key => key.Column == column.Name);
-                if (foreignKey != null)
-                    builder.Append($" REFERENCES {foreignKey.ForeignSchemaName}.{foreignKey.ForeignTable}({foreignKey.ForeignColumn})");
-
-                // add the , if not last column
-                builder.AppendLine(i < table.Columns.Count - 1 ? "," : "");
-            }
-
-            builder.AppendLine(");");
-
-            _logger.LogDebug($"cloned table structure of {table}!");
-            return builder.ToString();
-        }
-
+        
         public Task CreateSchemaAsync(string schemaName) => Connection.ExecuteNonQueryAsync($"CREATE SCHEMA {schemaName}");
 
         public Task DropTableAsync(ShallowTable table, bool checkIfTableIsReferenced) =>
@@ -233,7 +32,7 @@ namespace tableshot
         {
             if (checkIfTableIsReferenced)
             {
-                var referencingKeys = await QueryTableForeignKeysAsync(tableName, schemaName, ReferencedByOptions.Ascending);
+                var referencingKeys = await ListTableForeignKeysAsync(tableName, schemaName, ReferencedByOptions.Ascending);
 
                 if (referencingKeys.Any())
                     throw new InvalidOperationException($"This table is referenced by one or more foreign keys.");
@@ -252,7 +51,7 @@ namespace tableshot
             return obj is DatabaseManager && Equals((DatabaseManager) obj);
         }
 
-        public static async Task<List<string>> GetDatabasesAsync(DatabaseConnection connection)
+        public static async Task<List<string>> ListDatabasesAsync(DatabaseConnection connection)
         {
             _logger.LogDebug("listing databases..");
             var databases = new List<string>();
@@ -279,7 +78,7 @@ namespace tableshot
             }
         }
 
-        public static async Task<List<string>> GetSchemasAsync(DatabaseConnection connection)
+        public static async Task<List<string>> ListSchemasAsync(DatabaseConnection connection)
         {
             _logger.LogDebug("listing schemas..");
             var databases = new List<string>();
@@ -291,8 +90,11 @@ namespace tableshot
             return databases;
         }
 
-        public async Task<List<string>> GetTablesAsync(string schemaName)
+        public async Task<List<string>> ListTableNamesAsync(string schemaName)
         {
+            if (schemaName == null)
+                throw new ArgumentNullException(nameof(schemaName));
+
             var query = SqlQueryBuilder
                 .FromString("SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
                 .Where(schemaName, "TABLE_SCHEMA")
@@ -313,7 +115,7 @@ namespace tableshot
 
         public static bool operator !=(DatabaseManager left, DatabaseManager right) => !Equals(left, right);
 
-        public async Task<bool> QuerySchemaExistsAsync(string schemaName)
+        public async Task<bool> SchemaExistsAsync(string schemaName)
         {
             var query = SqlQueryBuilder
                 .FromString("SELECT SCHEMA_NAME, SCHEMA_OWNER FROM INFORMATION_SCHEMA.SCHEMATA")
@@ -326,13 +128,13 @@ namespace tableshot
             return anyRow;
         }
 
-        public async Task<List<Schema>> QuerySchemasAsync()
+        public async Task<List<Schema>> ListSchemasAsync()
         {
-            var schemaNames = await GetSchemasAsync(Connection);
-            return (await Task.WhenAll(schemaNames.Select(async schemaName => new Schema(schemaName, await GetTablesAsync(schemaName))))).ToList();
+            var schemaNames = await ListSchemasAsync(Connection);
+            return (await Task.WhenAll(schemaNames.Select(async schemaName => new Schema(schemaName, await ListTableNamesAsync(schemaName))))).ToList();
         }
 
-        public async Task<List<ShallowTable>> QueryShallowTablesAsync(string schemaName)
+        public async Task<List<ShallowTable>> ListShallowTablesAsync(string schemaName)
         {
             _logger.LogDebug("listing tables..");
             var tables = new List<ShallowTable>();
@@ -359,20 +161,30 @@ namespace tableshot
 
         public async Task<Table> QueryTableAsync(string tableName, string schemaName)
         {
-            if (!await QueryTableExistsAsync(tableName, schemaName))
+            if (tableName == null)
+                throw new ArgumentNullException(nameof(tableName));
+            if (schemaName == null)
+                throw new ArgumentNullException(nameof(schemaName));
+
+            if (!await TableExistsAsync(tableName, schemaName))
                 return null;
 
-            var columns = await QueryColumnsAsync(tableName, schemaName);
-            var keys = await QueryKeysAsync(tableName, schemaName);
+            var columns = await ListTableColumnsAsync(tableName, schemaName);
+            var keys = await ListTableKeysAsync(tableName, schemaName);
 
             var table = new Table(schemaName, tableName, columns, keys, null);
             return table;
         }
 
-        public Task<bool> QueryTableExistsAsync(ShallowTable table) => QueryTableExistsAsync(table.Name, table.SchemaName);
+        public Task<bool> TableExistsAsync(ShallowTable table) => TableExistsAsync(table.Name, table.SchemaName);
 
-        public async Task<bool> QueryTableExistsAsync(string tableName, string schemaName)
+        public async Task<bool> TableExistsAsync(string tableName, string schemaName)
         {
+            if (tableName == null)
+                throw new ArgumentNullException(nameof(tableName));
+            if (schemaName == null)
+                throw new ArgumentNullException(nameof(schemaName));
+
             var query = SqlQueryBuilder
                 .FromString("SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
                 .Where(schemaName, "TABLE_SCHEMA")
@@ -384,52 +196,27 @@ namespace tableshot
 
             return anyRow;
         }
-
-        public async Task<List<Table>> QueryTablesAsync(IEnumerable<string> tableNames, string schemaName, bool sortOnDependency = true)
+        
+        public async Task<List<Table>> ListTablesAsync(string schemaName, bool sortOnDependency = true)
         {
-            var tables = await Task.WhenAll(tableNames.Select(t => QueryTableAsync(t, schemaName)));
-            return SortTables(sortOnDependency, tables.ToList());
+            var shallowTables = await ListShallowTablesAsync(schemaName);
+            var tables = await Task.WhenAll(shallowTables.Select(async table => await QueryTableAsync(table)));
+
+            return SortTables(tables, sortOnDependency);
         }
 
-        public async Task<List<Table>> QueryTablesAsync(string schemaName, bool sortOnDependency = true)
+        public Task<List<ShallowTable>> ListTablesReferencedByAsync(ShallowTable table, ReferencedByOptions options) =>
+            ListTablesReferencedByAsync(table.Name, table.SchemaName, options);
+        
+        public async Task<List<ShallowTable>> ListTablesReferencedByAsync(string tableName, string schemaName, ReferencedByOptions options)
         {
-            var shallowTables = await QueryShallowTablesAsync(schemaName);
-            var tables = await Task.WhenAll(shallowTables.Select(async table => await QueryTableAsync(table.SchemaName, table.Name)));
+            if (tableName == null)
+                throw new ArgumentNullException(nameof(tableName));
+            if (schemaName == null)
+                throw new ArgumentNullException(nameof(schemaName));
 
-            return SortTables(sortOnDependency, tables);
-        }
-
-        public Task<List<ShallowTable>> QueryTablesReferencedByAsync(ShallowTable table, ReferencedByOptions options) =>
-            QueryTablesReferencedByAsync(table.Name, table.SchemaName, options);
-
-        public async Task<List<ShallowTable>> QueryTablesReferencedByAsync(IEnumerable<ShallowTable> tables, ReferencedByOptions options)
-        {
-            var fullDictionary = new Dictionary<ShallowTable, List<ShallowTable>>();
-
-            foreach (var table in tables)
-            {
-                if (fullDictionary.ContainsKey(table))
-                    continue;
-
-                var referencedTables = await QueryTablesReferencedByAsyncImpl(table.Name, table.SchemaName, options);
-                referencedTables[table] = referencedTables.Keys.ToList();
-
-                foreach (var referenced in referencedTables)
-                {
-                    if (fullDictionary.ContainsKey(referenced.Key))
-                        continue;
-
-                    fullDictionary.Add(referenced.Key, referenced.Value);
-                }
-            }
-
-            return fullDictionary.Keys.TopologicalSort(table => fullDictionary[table]).ToList();
-        }
-
-        public async Task<List<ShallowTable>> QueryTablesReferencedByAsync(string tableName, string schemaName, ReferencedByOptions options = ReferencedByOptions.Descending)
-        {
             _logger.LogDebug($"listing dependent tables of {schemaName}.{tableName}..");
-            var referencedTables = await QueryTablesReferencedByAsyncImpl(tableName, schemaName, options);
+            var referencedTables = await ListTablesReferencedByAsyncImpl(tableName, schemaName, options);
             referencedTables[new ShallowTable(schemaName, tableName)] = referencedTables.Keys.ToList();
 
             var tables = referencedTables.Keys.TopologicalSort(table => referencedTables[table]).ToList();
@@ -438,19 +225,24 @@ namespace tableshot
             return tables;
         }
 
-        public static List<Table> SortTables(IEnumerable<Table> tables) => SortTables(true, tables);
+        public static List<Table> SortTables(IEnumerable<Table> tables) => SortTables(tables, true);
 
         public Task TruncateTableAsync(ShallowTable table, bool truncateReferenced = false) =>
             TruncateTableAsync(table.Name, table.SchemaName, truncateReferenced);
 
-        public async Task TruncateTableAsync(string tableName, string schemaName, bool truncateReferenced = false)
+        public async Task TruncateTableAsync(string tableName, string schemaName, bool truncateReferenced)
         {
+            if (tableName == null)
+                throw new ArgumentNullException(nameof(tableName));
+            if (schemaName == null)
+                throw new ArgumentNullException(nameof(schemaName));
+
             if (truncateReferenced)
             {
-                var referenced = await QueryTablesReferencedByAsync(tableName, schemaName);
+                var referenced = await ListTablesReferencedByAsync(tableName, schemaName, ReferencedByOptions.Descending);
 
                 foreach (var table in referenced)
-                    await TruncateTableAsync(table.Name, table.SchemaName);
+                    await TruncateTableAsync(table.Name, table.SchemaName, true);
             }
 
             await Connection.ExecuteNonQueryAsync($"TRUNCATE TABLE {schemaName}.{tableName}");
@@ -458,28 +250,17 @@ namespace tableshot
 
         private bool Equals(DatabaseManager other) => 
             Equals(Connection, other.Connection);
+        
+        public Task<List<Column>> ListTableColumnsAsync(ShallowTable table) =>
+            ListTableColumnsAsync(table.Name, table.SchemaName);
 
-        //public async Task<List<Table>> QueryTablesReferencedByAsync(string tableName, string schemaName)
-        //{
-        //    _logger.LogDebug($"listing referenced tables of {tableName}..");
-        //    var tables = new List<Table>();
-
-        //    var foreignKeys = await QueryTableForeignKeysAsync(null, tableName);
-        //    foreach (var table in foreignKeys.Select(f => f.TableName))
-        //    {
-        //        tables.Add(await QueryTableAsync(table));
-        //        tables.AddRange(await QueryTablesReferencedByAsync(table));
-        //    }
-
-        //    _logger.LogDebug($"found {tables.Count} referenced tables");
-        //    return tables;
-        //}
-
-        public Task<List<Column>> QueryColumnsAsync(ShallowTable table) =>
-            QueryColumnsAsync(table.Name, table.SchemaName);
-
-        public async Task<List<Column>> QueryColumnsAsync(string tableName, string schemaName)
+        public async Task<List<Column>> ListTableColumnsAsync(string tableName, string schemaName)
         {
+            if (tableName == null)
+                throw new ArgumentNullException(nameof(tableName));
+            if (schemaName == null)
+                throw new ArgumentNullException(nameof(schemaName));
+
             _logger.LogDebug($"listing columns of {tableName}..");
             var columns = new List<Column>();
 
@@ -522,10 +303,10 @@ namespace tableshot
             return columns;
         }
 
-        private Task<List<Key>> QueryKeysAsync(ShallowTable table) =>
-            QueryKeysAsync(table.Name, table.SchemaName);
+        private Task<List<Key>> ListTableKeysAsync(ShallowTable table) =>
+            ListTableKeysAsync(table.Name, table.SchemaName);
 
-        private async Task<List<Key>> QueryKeysAsync(string tableName, string schemaName)
+        private async Task<List<Key>> ListTableKeysAsync(string tableName, string schemaName)
         {
             _logger.LogDebug("listing keys..");
 
@@ -535,7 +316,7 @@ namespace tableshot
             if (primaryKey != null)
                 keys.Add(primaryKey);
 
-            var foreignKeys = await QueryTableForeignKeysAsync(tableName, schemaName, ReferencedByOptions.Descending);
+            var foreignKeys = await ListTableForeignKeysAsync(tableName, schemaName, ReferencedByOptions.Descending);
             if (foreignKeys != null)
                 keys.AddRange(foreignKeys);
 
@@ -578,10 +359,10 @@ namespace tableshot
             return primaryKey;
         }
 
-        private Task<List<Key>> QueryTableForeignKeysAsync(ShallowTable table, ReferencedByOptions options) =>
-            QueryTableForeignKeysAsync(table.Name, table.SchemaName, options);
+        private Task<List<Key>> ListTableForeignKeysAsync(ShallowTable table, ReferencedByOptions options) =>
+            ListTableForeignKeysAsync(table.Name, table.SchemaName, options);
 
-        private async Task<List<Key>> QueryTableForeignKeysAsync(string tableName, string schemaName, ReferencedByOptions options)
+        private async Task<List<Key>> ListTableForeignKeysAsync(string tableName, string schemaName, ReferencedByOptions options)
         {
             if (options == ReferencedByOptions.Disabled)
                 throw new ArgumentException("Disabled doesn't make sense in this context.", nameof(options));
@@ -626,17 +407,17 @@ namespace tableshot
             return keys;
         }
 
-        private Task<Dictionary<ShallowTable, List<ShallowTable>>> QueryTablesReferencedByAsyncImpl(ShallowTable table, ReferencedByOptions options) =>
-            QueryTablesReferencedByAsyncImpl(table.Name, table.SchemaName, options);
+        private Task<Dictionary<ShallowTable, List<ShallowTable>>> ListTablesReferencedByAsyncImpl(ShallowTable table, ReferencedByOptions options) =>
+            ListTablesReferencedByAsyncImpl(table.Name, table.SchemaName, options);
         
-        private async Task<Dictionary<ShallowTable, List<ShallowTable>>> QueryTablesReferencedByAsyncImpl(string tableName, string schemaName, ReferencedByOptions options)
+        private async Task<Dictionary<ShallowTable, List<ShallowTable>>> ListTablesReferencedByAsyncImpl(string tableName, string schemaName, ReferencedByOptions options)
         {
             if (!options.HasFlag(ReferencedByOptions.Ascending) && !options.HasFlag(ReferencedByOptions.Descending))
                 throw new ArgumentException("Can't resolve Referenced Tables without selecting either Descending (referenced to) or Ascending (referenced by)", nameof(options));
 
             var tables = new Dictionary<ShallowTable, List<ShallowTable>>();
 
-            var foreignKeys = await QueryTableForeignKeysAsync(tableName, schemaName, options);
+            var foreignKeys = await ListTableForeignKeysAsync(tableName, schemaName, options);
             foreach (var key in foreignKeys)
             {
                 var shallowTable = new ShallowTable(key.ForeignSchemaName, key.ForeignTable);
@@ -655,7 +436,7 @@ namespace tableshot
 
                 foreach (var foreignTable in foreignTables)
                 {
-                    var referenced = await QueryTablesReferencedByAsyncImpl(foreignTable, options);
+                    var referenced = await ListTablesReferencedByAsyncImpl(foreignTable, options);
                     if (tables.ContainsKey(foreignTable))
                         continue;
                         // throw new NotImplementedException($"Result Referenced Tables already contained definition for {foreignTable}, how to deal with this?");
@@ -675,7 +456,7 @@ namespace tableshot
             return tables;
         }
 
-        private static List<Table> SortTables(bool sortOnDependency, IEnumerable<Table> tables)
+        private static List<Table> SortTables(IEnumerable<Table> tables, bool sortOnDependency)
         {
             var copyTables = tables.ToList();
 
