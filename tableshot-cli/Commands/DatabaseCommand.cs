@@ -38,7 +38,11 @@ namespace tableshot.Commands
                     }));
                 }
 
-                Program.Configuration.TableConfigurations = tableConfigurations;
+                Program.Configuration.TableConfigurations = tableConfigurations
+                    .OrderBy(t => t.Table.SchemaName)
+                    .ThenBy(t => t.Table.Name)
+                    .ToList();
+
                 await Execute(manager);
             }
         }
