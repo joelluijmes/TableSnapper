@@ -22,12 +22,13 @@ namespace tableshot.Commands
         {
             var tables = Program.Configuration.TableConfigurations;
 
+            Console.WriteLine("All referenced tables on (in order of dependency):");
             foreach (var table in tables)
             {
                 var referencedTables = await databaseManager.ListTablesReferencedByAsync(table.Table, table.ReferencedBy);
 
-                Console.WriteLine("All referenced tables on (in order of dependency):");
                 Console.WriteLine(referencedTables.Aggregate($" {table.Table}", (a, b) => $"{a}\r\n  {b}"));
+                Console.WriteLine();
             }
         }
     }

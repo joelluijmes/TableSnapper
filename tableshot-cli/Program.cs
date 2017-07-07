@@ -43,7 +43,7 @@ namespace tableshot
                 var configOption = configuration.Option("--config", "path to config file", CommandOptionType.SingleValue);
                 var sourceServerOption = configuration.Option("--source", "override source database (<username>:<pass>@<server>:<database>)", CommandOptionType.SingleValue);
                 var targetServerOption = configuration.Option("--target", "override target database (<username>:<pass>@<server>:<database>)", CommandOptionType.SingleValue);
-                var tablesOption = configuration.Option("--table", "override tables to clone ([Schema].Table:<none|schema|full>)", CommandOptionType.MultipleValue);
+                var tablesOption = configuration.Option("--table", "override tables ([Schema].Table:<none|schema|descend|ascend|schema-descend|schema-ascend>)", CommandOptionType.MultipleValue);
 
                 // specific command configuration
                 command.Configure(configuration);
