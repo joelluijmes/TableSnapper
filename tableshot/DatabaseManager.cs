@@ -18,7 +18,7 @@ namespace tableshot
 
         private bool _disposed;
 
-        public DatabaseManager(DatabaseConnection connection, string schemaName = null)
+        public DatabaseManager(DatabaseConnection connection, string schemaName)
         {
             Connection = connection;
             SchemaName = schemaName;
@@ -27,7 +27,7 @@ namespace tableshot
         public DatabaseConnection Connection { get; }
         public string SchemaName { get; }
 
-        public async Task BackupToDirectoryAsync(string directory, string schemaName = null, bool splitPerTable = true, bool skipData = false)
+        public async Task BackupToDirectoryAsync(string directory, string schemaName, bool splitPerTable = true, bool skipData = false)
         {
             var tables = await QueryTablesAsync(schemaName);
             await BackupToDirectoryAsync(directory, tables, splitPerTable, skipData);
@@ -77,7 +77,7 @@ namespace tableshot
             }
         }
 
-        public async Task CloneFromDirectoryAsync(string directory, string schemaName = null)
+        public async Task CloneFromDirectoryAsync(string directory, string schemaName)
         {
             var files = Directory.GetFiles(directory).OrderBy(f => f).ToArray();
             if (files.Any(f => !Regex.IsMatch(f, "\\d+_.*\\.sql")))
@@ -293,7 +293,7 @@ namespace tableshot
             return databases;
         }
 
-        public async Task<List<string>> GetTablesAsync(string schemaName = null)
+        public async Task<List<string>> GetTablesAsync(string schemaName)
         {
             var query = SqlQueryBuilder
                 .FromString("SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
@@ -315,7 +315,7 @@ namespace tableshot
 
         public static bool operator !=(DatabaseManager left, DatabaseManager right) => !Equals(left, right);
 
-        public async Task<bool> QuerySchemaExistsAsync(string schemaName = null)
+        public async Task<bool> QuerySchemaExistsAsync(string schemaName)
         {
             var query = SqlQueryBuilder
                 .FromString("SELECT SCHEMA_NAME, SCHEMA_OWNER FROM INFORMATION_SCHEMA.SCHEMATA")
@@ -359,7 +359,7 @@ namespace tableshot
 
         public Task<Table> QueryTableAsync(ShallowTable table) => QueryTableAsync(table.Name, table.SchemaName);
 
-        public async Task<Table> QueryTableAsync(string tableName, string schemaName = null)
+        public async Task<Table> QueryTableAsync(string tableName, string schemaName)
         {
             schemaName = schemaName ?? SchemaName;
 
@@ -375,7 +375,7 @@ namespace tableshot
 
         public Task<bool> QueryTableExistsAsync(ShallowTable table) => QueryTableExistsAsync(table.Name, table.SchemaName);
 
-        public async Task<bool> QueryTableExistsAsync(string tableName, string schemaName = null)
+        public async Task<bool> QueryTableExistsAsync(string tableName, string schemaName)
         {
             var query = SqlQueryBuilder
                 .FromString("SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
@@ -389,13 +389,13 @@ namespace tableshot
             return anyRow;
         }
 
-        public async Task<List<Table>> QueryTablesAsync(IEnumerable<string> tableNames, string schemaName = null, bool sortOnDependency = true)
+        public async Task<List<Table>> QueryTablesAsync(IEnumerable<string> tableNames, string schemaName, bool sortOnDependency = true)
         {
             var tables = await Task.WhenAll(tableNames.Select(t => QueryTableAsync(t, schemaName)));
             return SortTables(sortOnDependency, tables.ToList());
         }
 
-        public async Task<List<Table>> QueryTablesAsync(string schemaName = null, bool sortOnDependency = true)
+        public async Task<List<Table>> QueryTablesAsync(string schemaName, bool sortOnDependency = true)
         {
             var shallowTables = await QueryShallowTablesAsync(schemaName);
             var tables = await Task.WhenAll(shallowTables.Select(async table => await QueryTableAsync(table.SchemaName, table.Name)));
@@ -430,9 +430,9 @@ namespace tableshot
             return fullDictionary.Keys.TopologicalSort(table => fullDictionary[table]).ToList();
         }
 
-        public async Task<List<ShallowTable>> QueryTablesReferencedByAsync(string tableName, string schemaName = null, ReferencedByOptions options = ReferencedByOptions.Descending)
+        public async Task<List<ShallowTable>> QueryTablesReferencedByAsync(string tableName, string schemaName, ReferencedByOptions options = ReferencedByOptions.Descending)
         {
-            _logger.LogDebug($"listing dependent tables of {tableName}..");
+            _logger.LogDebug($"listing dependent tables of {schemaName}.{tableName}..");
             var referencedTables = await QueryTablesReferencedByAsyncImpl(tableName, schemaName, options);
             referencedTables[new ShallowTable(schemaName, tableName)] = referencedTables.Keys.ToList();
 
@@ -447,7 +447,7 @@ namespace tableshot
         public Task TruncateTableAsync(ShallowTable table, bool truncateReferenced = false) =>
             TruncateTableAsync(table.Name, table.SchemaName, truncateReferenced);
 
-        public async Task TruncateTableAsync(string tableName, string schemaName = null, bool truncateReferenced = false)
+        public async Task TruncateTableAsync(string tableName, string schemaName, bool truncateReferenced = false)
         {
             if (truncateReferenced)
             {
@@ -465,7 +465,7 @@ namespace tableshot
             return Equals(Connection, other.Connection) && string.Equals(SchemaName, other.SchemaName);
         }
 
-        //public async Task<List<Table>> QueryTablesReferencedByAsync(string tableName, string schemaName = null)
+        //public async Task<List<Table>> QueryTablesReferencedByAsync(string tableName, string schemaName)
         //{
         //    _logger.LogDebug($"listing referenced tables of {tableName}..");
         //    var tables = new List<Table>();
@@ -484,7 +484,7 @@ namespace tableshot
         public Task<List<Column>> QueryColumnsAsync(ShallowTable table) =>
             QueryColumnsAsync(table.Name, table.SchemaName);
 
-        public async Task<List<Column>> QueryColumnsAsync(string tableName, string schemaName = null)
+        public async Task<List<Column>> QueryColumnsAsync(string tableName, string schemaName)
         {
             _logger.LogDebug($"listing columns of {tableName}..");
             var columns = new List<Column>();
@@ -531,7 +531,7 @@ namespace tableshot
         private Task<List<Key>> QueryKeysAsync(ShallowTable table) =>
             QueryKeysAsync(table.Name, table.SchemaName);
 
-        private async Task<List<Key>> QueryKeysAsync(string tableName, string schemaName = null)
+        private async Task<List<Key>> QueryKeysAsync(string tableName, string schemaName)
         {
             _logger.LogDebug("listing keys..");
 
@@ -553,7 +553,7 @@ namespace tableshot
         private Task<Key> QueryPrimaryKeyAsync(ShallowTable table) =>
             QueryPrimaryKeyAsync(table.Name, table.SchemaName);
 
-        private async Task<Key> QueryPrimaryKeyAsync(string tableName, string schemaName = null)
+        private async Task<Key> QueryPrimaryKeyAsync(string tableName, string schemaName)
         {
             var query = SqlQueryBuilder.FromString(
                     "SELECT		tab.TABLE_NAME as tableName, COLUMN_NAME as columnName, col.CONSTRAINT_NAME as keyName\r\n" +
