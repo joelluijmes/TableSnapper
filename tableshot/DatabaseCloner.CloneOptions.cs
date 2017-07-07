@@ -23,7 +23,7 @@ namespace tableshot
             public IList<CloneTable> Tables { get; }
             public string TargetSchema { get; }
             public string SourceSchema { get; }
-            public bool CreateMissingSchemas { get; set; } = true;
+            public bool CreateMissingSchemas { get; set; }
             public bool SkipSharedTables { get; set; } = true;
         }
     }
