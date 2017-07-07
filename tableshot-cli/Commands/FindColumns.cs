@@ -52,7 +52,7 @@ namespace tableshot.Commands
                         .Select(tc => new
                         {
                             table = tc.table,
-                            column = tc.columns.Where(c => CultureInfo.InvariantCulture.CompareInfo.IndexOf(c.Name, column, CompareOptions.IgnoreCase) >= 0).ToArray()
+                            column = tc.columns.Where(c => CultureInfo.CurrentCulture.CompareInfo.IndexOf(c.Name, column, CompareOptions.IgnoreCase) >= 0).ToArray()
                         })
                         .Where(tc => tc.column.Any())
                         .ToList();
