@@ -2,6 +2,7 @@
 using System.Data.SqlClient;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using tableshot.Exceptions;
 
 namespace tableshot
 {
@@ -9,16 +10,14 @@ namespace tableshot
     {
         private static readonly ILogger _logger = ApplicationLogging.CreateLogger<DatabaseConnection>();
 
-        private readonly string _database;
-        private readonly string _server;
         private readonly SqlConnection _sqlConnection;
 
         private bool _disposed;
 
         public DatabaseConnection(SqlConnectionStringBuilder sqlBuilder)
         {
-            _server = sqlBuilder.DataSource;
-            _database = sqlBuilder.InitialCatalog;
+            Server = sqlBuilder.DataSource;
+            Database = sqlBuilder.InitialCatalog;
 
             sqlBuilder.MultipleActiveResultSets = true;
 
@@ -27,7 +26,11 @@ namespace tableshot
 
             _sqlConnection = new SqlConnection(connectionString);
         }
-        
+
+        public string Database { get; }
+
+        public string Server { get; }
+
         public void Dispose()
         {
             if (_disposed)
@@ -45,7 +48,10 @@ namespace tableshot
             return repo;
         }
 
-        public static Task<DatabaseConnection> CreateConnectionAsync(string server) => CreateConnectionAsync(server, null);
+        public static Task<DatabaseConnection> CreateConnectionAsync(string server)
+        {
+            return CreateConnectionAsync(server, null);
+        }
 
         public static async Task<DatabaseConnection> CreateConnectionAsync(string server, string database)
         {
@@ -79,16 +85,34 @@ namespace tableshot
             return repo;
         }
 
+        public override bool Equals(object obj)
+        {
+            if (ReferenceEquals(null, obj))
+                return false;
+            if (ReferenceEquals(this, obj))
+                return true;
+
+            return obj is DatabaseConnection && Equals((DatabaseConnection) obj);
+        }
+
         public async Task<int> ExecuteNonQueryAsync(string command)
         {
             _logger.LogTrace(command);
 
-            using (var sqlCommand = new SqlCommand(command, _sqlConnection))
+            try
             {
-                var count = await sqlCommand.ExecuteNonQueryAsync();
-                _logger.LogTrace($"{count} updated");
+                using (var sqlCommand = new SqlCommand(command, _sqlConnection))
+                {
+                    var count = await sqlCommand.ExecuteNonQueryAsync();
+                    _logger.LogTrace($"{count} updated");
 
-                return count;
+                    return count;
+                }
+            }
+            catch (Exception e)
+            {
+                _logger.LogError($"Exception executing:\r\n{command}", e);
+                throw new DatabaseException(command, e);
             }
         }
 
@@ -121,46 +145,59 @@ namespace tableshot
 
         public async Task ExecuteQueryReaderAsync(string command, Func<SqlDataReader, Task<bool>> callback)
         {
-            _logger.LogTrace(command);
-
-            var count = 0;
-            using (var sqlCommand = new SqlCommand(command, _sqlConnection))
-            using (var reader = await sqlCommand.ExecuteReaderAsync())
+            try
             {
-                while (await reader.ReadAsync())
-                {
-                    // stop if callback returned false
-                    if (await callback(reader))
-                        continue;
+                _logger.LogTrace(command);
 
-                    _logger.LogTrace("callback returned false -> early exit");
-                    break;
+                var count = 0;
+                using (var sqlCommand = new SqlCommand(command, _sqlConnection))
+                using (var reader = await sqlCommand.ExecuteReaderAsync())
+                {
+                    while (await reader.ReadAsync())
+                    {
+                        // stop if callback returned false
+                        if (await callback(reader))
+                            continue;
+
+                        _logger.LogTrace("callback returned false -> early exit");
+                        break;
+                    }
+
+                    ++count;
                 }
 
-                ++count;
+                _logger.LogTrace($"{count} rows read");
             }
-
-            _logger.LogTrace($"{count} rows read");
+            catch (Exception e)
+            {
+                _logger.LogError($"Exception executing:\r\n{command}", e);
+                throw new DatabaseException(command, e);
+            }
         }
 
-        public Task OpenAsync() => _sqlConnection.OpenAsync();
-
-        private bool Equals(DatabaseConnection other) => Equals(_sqlConnection, other._sqlConnection);
-
-        public override bool Equals(object obj)
+        public override int GetHashCode()
         {
-            if (ReferenceEquals(null, obj))
-                return false;
-            if (ReferenceEquals(this, obj))
-                return true;
-
-            return obj is DatabaseConnection && Equals((DatabaseConnection) obj);
+            return _sqlConnection?.GetHashCode() ?? 0;
         }
 
-        public override int GetHashCode() => _sqlConnection?.GetHashCode() ?? 0;
+        public static bool operator ==(DatabaseConnection left, DatabaseConnection right)
+        {
+            return Equals(left, right);
+        }
 
-        public static bool operator ==(DatabaseConnection left, DatabaseConnection right) => Equals(left, right);
+        public static bool operator !=(DatabaseConnection left, DatabaseConnection right)
+        {
+            return !Equals(left, right);
+        }
 
-        public static bool operator !=(DatabaseConnection left, DatabaseConnection right) => !Equals(left, right);
+        public Task OpenAsync()
+        {
+            return _sqlConnection.OpenAsync();
+        }
+
+        private bool Equals(DatabaseConnection other)
+        {
+            return Equals(_sqlConnection, other._sqlConnection);
+        }
     }
 }
