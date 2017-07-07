@@ -66,6 +66,10 @@ namespace tableshot
             case "full-ascend":
                 return ReferencedByOptions.Ascending;
 
+            case "ascend-descend":
+            case "descend-ascend":
+                return ReferencedByOptions.Ascending | ReferencedByOptions.Descending;
+
                 default:
                 return ReferencedByOptions.Disabled;
             }

@@ -222,7 +222,7 @@ namespace tableshot
             var referencedTables = await ListTablesReferencedByAsyncImpl(tableName, schemaName, options);
             referencedTables[new ShallowTable(schemaName, tableName)] = referencedTables.Keys.ToList();
 
-            var sorted = referencedTables.Keys.TopologicalSort(table => referencedTables[table]);
+            var sorted = referencedTables.Keys.TopologicalSort(table => referencedTables[table], false);
             if (options.HasFlag(ReferencedByOptions.Ascending))
                 sorted = sorted.Reverse();
 
@@ -356,11 +356,12 @@ namespace tableshot
                     "FROM		sys.foreign_keys AS f\r\n" +
                     "INNER JOIN	sys.foreign_key_columns AS fc\r\n" +
                     "ON			f.OBJECT_ID = fc.constraint_object_id")
-                .Where(options.HasFlag(ReferencedByOptions.Ascending), "OBJECT_NAME(f.referenced_object_id)", tableName)
-                .Where(options.HasFlag(ReferencedByOptions.Descending), "OBJECT_NAME(f.parent_object_id)", tableName)
-                .Where(options.HasFlag(ReferencedByOptions.Schema) && options.HasFlag(ReferencedByOptions.Ascending), "OBJECT_SCHEMA_NAME(fc.parent_object_id)", schemaName)
-                .Where(options.HasFlag(ReferencedByOptions.Schema) && options.HasFlag(ReferencedByOptions.Descending), "OBJECT_SCHEMA_NAME(f.referenced_object_id)", schemaName)
-                .WhereEither(schemaName, "OBJECT_SCHEMA_NAME(f.referenced_object_id)", "OBJECT_SCHEMA_NAME(fc.parent_object_id)");
+                .Where(options.HasFlag(ReferencedByOptions.Ascending) && !options.HasFlag(ReferencedByOptions.Descending), tableName, "OBJECT_NAME(f.referenced_object_id)")
+                .Where(options.HasFlag(ReferencedByOptions.Descending) && !options.HasFlag(ReferencedByOptions.Ascending), tableName, "OBJECT_NAME(f.parent_object_id)")
+                .Where(options.HasFlag(ReferencedByOptions.Schema) && options.HasFlag(ReferencedByOptions.Ascending), schemaName, "OBJECT_SCHEMA_NAME(fc.parent_object_id)")
+                .Where(options.HasFlag(ReferencedByOptions.Schema) && options.HasFlag(ReferencedByOptions.Descending), schemaName, "OBJECT_SCHEMA_NAME(f.referenced_object_id)")
+                .WhereEither(schemaName, "OBJECT_SCHEMA_NAME(f.referenced_object_id)", "OBJECT_SCHEMA_NAME(fc.parent_object_id)")
+                .WhereEither(options.HasFlag(ReferencedByOptions.Ascending) && options.HasFlag(ReferencedByOptions.Descending), tableName, "OBJECT_NAME(f.referenced_object_id)", "OBJECT_NAME(fc.parent_object_id)");
 
             var query = queryBuilder.ToString();
 
@@ -407,43 +408,46 @@ namespace tableshot
             return keys;
         }
 
-        private Task<Dictionary<ShallowTable, List<ShallowTable>>> ListTablesReferencedByAsyncImpl(ShallowTable table, ReferencedByOptions options)
+        private Task<Dictionary<ShallowTable, List<ShallowTable>>> ListTablesReferencedByAsyncImpl(string tableName, string schemaName, ReferencedByOptions options)
         {
-            return ListTablesReferencedByAsyncImpl(table.Name, table.SchemaName, options);
+            return ListTablesReferencedByAsyncImpl(tableName, schemaName, options, new Dictionary<ShallowTable, List<ShallowTable>>());
+        }
+        
+        private Task<Dictionary<ShallowTable, List<ShallowTable>>> ListTablesReferencedByAsyncImpl(ShallowTable table, ReferencedByOptions options, Dictionary<ShallowTable, List<ShallowTable>> tables)
+        {
+            return ListTablesReferencedByAsyncImpl(table.Name, table.SchemaName, options, tables);
         }
 
-        private async Task<Dictionary<ShallowTable, List<ShallowTable>>> ListTablesReferencedByAsyncImpl(string tableName, string schemaName, ReferencedByOptions options)
+        private async Task<Dictionary<ShallowTable, List<ShallowTable>>> ListTablesReferencedByAsyncImpl(string tableName, string schemaName, ReferencedByOptions options, Dictionary<ShallowTable, List<ShallowTable>> tables)
         {
+            if (options == ReferencedByOptions.Disabled)
+                throw new ArgumentException("Referenced is disabled", nameof(options));
             if (!options.HasFlag(ReferencedByOptions.Ascending) && !options.HasFlag(ReferencedByOptions.Descending))
                 throw new ArgumentException("Can't resolve Referenced Tables without selecting either Descending (referenced to) or Ascending (referenced by)", nameof(options));
 
-            var tables = new Dictionary<ShallowTable, List<ShallowTable>>();
+            var currentTable = new ShallowTable(schemaName, tableName);
+            tables[currentTable] = new List<ShallowTable>();
 
             var foreignKeys = await ListTableForeignKeysAsync(tableName, schemaName, options);
             foreach (var key in foreignKeys)
             {
-                var shallowTable = new ShallowTable(key.ForeignSchemaName, key.ForeignTable);
+                //var shallowTable = new ShallowTable(key.ForeignSchemaName, key.ForeignTable);
 
-                // check if we decend, if we do check if we limit to our own scheme only, and last skip already descended tables
-                if (options == ReferencedByOptions.Disabled ||
-                    options == ReferencedByOptions.Schema && !shallowTable.SchemaName.Equals(schemaName, StringComparison.CurrentCultureIgnoreCase) ||
-                    tables.ContainsKey(shallowTable))
-                    continue;
-
-                var foreignTables = new List<ShallowTable>();
-                if (options.HasFlag(ReferencedByOptions.Ascending))
-                    foreignTables.Add(new ShallowTable(key.SchemaName, key.TableName));
-                if (options.HasFlag(ReferencedByOptions.Descending))
-                    foreignTables.Add(new ShallowTable(key.ForeignSchemaName, key.ForeignTable));
-
-                foreach (var foreignTable in foreignTables)
+                //// check if we decend, if we do check if we limit to our own scheme only, and last skip already descended tables
+                //if (options == ReferencedByOptions.Disabled ||
+                //    options == ReferencedByOptions.Schema && !shallowTable.SchemaName.Equals(schemaName, StringComparison.CurrentCultureIgnoreCase) ||
+                //    tables.ContainsKey(shallowTable))
+                //    continue;
+                
+                async Task ProcessTable(ShallowTable table)
                 {
-                    var referenced = await ListTablesReferencedByAsyncImpl(foreignTable, options);
-                    if (tables.ContainsKey(foreignTable))
-                        continue;
+                    if (tables.ContainsKey(table))
+                        return;
+
+                    var referenced = await ListTablesReferencedByAsyncImpl(table, options, tables);
                     // throw new NotImplementedException($"Result Referenced Tables already contained definition for {foreignTable}, how to deal with this?");
 
-                    tables[foreignTable] = referenced.Keys.ToList();
+                    tables[table] = referenced.Keys.ToList();
                     foreach (var pair in referenced)
                     {
                         if (tables.ContainsKey(pair.Key))
@@ -453,6 +457,14 @@ namespace tableshot
                         tables[pair.Key] = pair.Value;
                     }
                 }
+
+                var ascendTable = new ShallowTable(key.SchemaName, key.TableName);
+                var descendTable = new ShallowTable(key.ForeignSchemaName, key.ForeignTable);
+
+                if (options.HasFlag(ReferencedByOptions.Ascending) && !currentTable.Equals(ascendTable))
+                    await ProcessTable(ascendTable);
+                if (options.HasFlag(ReferencedByOptions.Descending) && !currentTable.Equals(descendTable))
+                    await ProcessTable(descendTable);
             }
 
             return tables;
@@ -499,7 +511,7 @@ namespace tableshot
             var copyTables = tables.ToList();
 
             return sortOnDependency
-                ? copyTables.TopologicalSort(left => copyTables.Where(right => left != right && right.Keys.Any(key => key.ForeignTable == left.Name))).ToList()
+                ? copyTables.TopologicalSort(left => copyTables.Where(right => left != right && right.Keys.Any(key => key.ForeignTable == left.Name)), false).ToList()
                 : copyTables;
         }
 
@@ -524,9 +536,14 @@ namespace tableshot
                 return _stringBuilder.ToString();
             }
 
-            public SqlQueryBuilder Where(bool predicate, string key, string value)
+            public SqlQueryBuilder Where(bool predicate, string value, string key)
             {
                 return predicate ? Where(value, key) : this;
+            }
+
+            public SqlQueryBuilder WhereEither(bool predicate, string value, params string[] keys)
+            {
+                return predicate ? WhereEither(value, keys) : this;
             }
 
             public SqlQueryBuilder Where(string value, string key)

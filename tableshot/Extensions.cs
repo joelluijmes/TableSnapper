@@ -12,7 +12,7 @@ namespace tableshot
             return dataReader.IsDBNull(ordinal) ? (int?) null : int.Parse(dataReader[ordinal].ToString());
         }
 
-        public static IEnumerable<T> TopologicalSort<T>(this IEnumerable<T> source, Func<T, IEnumerable<T>> dependencies, bool throwOnCycle = true)
+        public static IEnumerable<T> TopologicalSort<T>(this IEnumerable<T> source, Func<T, IEnumerable<T>> dependencies, bool throwOnCycle)
         {
             var sorted = new List<T>();
             var visited = new HashSet<T>();

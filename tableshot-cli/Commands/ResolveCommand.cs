@@ -27,7 +27,7 @@ namespace tableshot.Commands
             {
                 var referencedTables = await databaseManager.ListTablesReferencedByAsync(table.Table, table.ReferencedBy);
 
-                Console.WriteLine(referencedTables.Aggregate($" {table.Table}", (a, b) => $"{a}\r\n  {b}"));
+                Console.WriteLine(referencedTables.Aggregate($" {table}", (a, b) => $"{a}\r\n  {b}"));
                 Console.WriteLine();
             }
         }
