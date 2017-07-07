@@ -22,7 +22,7 @@ namespace tableshot
 
         public async Task BackupToDirectoryAsync(string directory, string schemaName, bool splitPerTable = true, bool skipData = false)
         {
-            var tables = await _manager.ListTablesAsync(schemaName);
+            var tables = await _manager.ListTablesAsync(null, schemaName);
             await BackupToDirectoryAsync(directory, tables, splitPerTable, skipData);
         }
 

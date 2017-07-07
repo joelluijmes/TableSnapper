@@ -8,19 +8,19 @@ namespace tableshot
     {
         public sealed class DatabaseCloneOptions
         {
-            public DatabaseCloneOptions(IEnumerable<CloneTable> tables)
+            public DatabaseCloneOptions(IEnumerable<TableConfiguration> tables)
             {
                 Tables = tables.ToList();
             }
 
-            public DatabaseCloneOptions(IEnumerable<CloneTable> tables, string targetSchema, string sourceSchema)
+            public DatabaseCloneOptions(IEnumerable<TableConfiguration> tables, string targetSchema, string sourceSchema)
             {
                 Tables = tables.ToList();
                 TargetSchema = targetSchema;
                 SourceSchema = sourceSchema;
             }
 
-            public IList<CloneTable> Tables { get; }
+            public IList<TableConfiguration> Tables { get; }
             public string TargetSchema { get; }
             public string SourceSchema { get; }
             public bool CreateMissingSchemas { get; set; }

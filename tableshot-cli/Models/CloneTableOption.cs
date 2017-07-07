@@ -13,7 +13,7 @@ namespace tableshot.Models
         [JsonConverter(typeof(ReferencedByOptionsConverter))]
         public ReferencedByOptions ReferencedBy { get; set; }
 
-        public CloneTable ToCloneTable() => new CloneTable
+        public TableConfiguration ToCloneTable() => new TableConfiguration
         {
             ReferencedBy = ReferencedBy,
             Table = Table

@@ -24,7 +24,7 @@ namespace tableshot.Commands
 
         protected override async Task Execute(DatabaseManager databaseManager)
         {
-            foreach (var table in Program.Configuration.Tables)
+            foreach (var table in Program.Configuration.TableConfigurations)
             {
                 var shallowTables = table.ReferencedBy != ReferencedByOptions.Disabled
                     ? await databaseManager.ListTablesReferencedByAsync(table.Table, table.ReferencedBy)

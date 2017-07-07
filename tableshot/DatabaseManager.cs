@@ -94,10 +94,10 @@ namespace tableshot
         public async Task<List<Schema>> ListSchemasAsync()
         {
             var schemaNames = await ListSchemasAsync(Connection);
-            return (await Task.WhenAll(schemaNames.Select(async schemaName => new Schema(schemaName, await ListTableNamesAsync(schemaName))))).ToList();
+            return (await Task.WhenAll(schemaNames.Select(async schemaName => new Schema(schemaName, await ListTableNamesAsync(null, schemaName))))).ToList();
         }
 
-        public async Task<List<ShallowTable>> ListShallowTablesAsync(string schemaName)
+        public async Task<List<ShallowTable>> ListShallowTablesAsync(string tableName, string schemaName)
         {
             _logger.LogDebug("listing tables..");
             var tables = new List<ShallowTable>();
@@ -105,14 +105,15 @@ namespace tableshot
             var query = SqlQueryBuilder
                 .FromString("SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
                 .Where(schemaName, "TABLE_SCHEMA")
+                .Where(tableName, "TABLE_NAME")
                 .ToString();
 
             await Connection.ExecuteQueryReaderAsync(query, tableRow =>
             {
-                var tableName = tableRow["TABLE_NAME"].ToString();
-                var schema = tableRow["TABLE_SCHEMA"].ToString();
+                var rowTable = tableRow["TABLE_NAME"].ToString();
+                var rowSchema = tableRow["TABLE_SCHEMA"].ToString();
 
-                tables.Add(new ShallowTable(schema, tableName));
+                tables.Add(new ShallowTable(rowSchema, rowTable));
             });
 
             _logger.LogDebug($"found {tables.Count} tables");
@@ -174,30 +175,32 @@ namespace tableshot
             return columns;
         }
 
-        public async Task<List<string>> ListTableNamesAsync(string schemaName)
+        public async Task<List<string>> ListTableNamesAsync(string tableName, string schemaName)
         {
-            if (schemaName == null)
-                throw new ArgumentNullException(nameof(schemaName));
+            _logger.LogDebug("listing tables..");
 
             var query = SqlQueryBuilder
                 .FromString("SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
                 .Where(schemaName, "TABLE_SCHEMA")
+                .Where(tableName, "TABLE_NAME")
                 .ToString();
 
             var tables = new List<string>();
             await Connection.ExecuteQueryReaderAsync(query, tableRow =>
             {
-                var tableName = tableRow["TABLE_NAME"].ToString();
+                var rowTable = tableRow["TABLE_NAME"].ToString();
 
-                tables.Add(tableName);
+                tables.Add(rowTable);
             });
+
+            _logger.LogDebug($"found {tables.Count} tables");
 
             return tables;
         }
 
-        public async Task<List<Table>> ListTablesAsync(string schemaName, bool sortOnDependency = true)
+        public async Task<List<Table>> ListTablesAsync(string tableName, string schemaName, bool sortOnDependency = true)
         {
-            var shallowTables = await ListShallowTablesAsync(schemaName);
+            var shallowTables = await ListShallowTablesAsync(tableName, schemaName);
             var tables = await Task.WhenAll(shallowTables.Select(async table => await QueryTableAsync(table)));
 
             return SortTables(tables, sortOnDependency);

@@ -16,7 +16,7 @@ namespace tableshot.Models
         
         [JsonProperty("tables")]
         [JsonConverter(typeof(TablesConverter))]
-        public IList<CloneTable> Tables { get; set; }
+        public IList<TableConfiguration> TableConfigurations { get; set; }
 
         [JsonProperty("columns")]
         public IList<string> Columns { get; set; }
@@ -34,7 +34,7 @@ namespace tableshot.Models
             {
                 var jsonArray = JArray.Load(reader);
 
-                return jsonArray.Select(jsonTable => new CloneTable
+                return jsonArray.Select(jsonTable => new TableConfiguration
                 {
                     Table = Util.ParseTableName(jsonTable["name"].ToString()),
                     ReferencedBy = Util.ParseReferencedByOptions(jsonTable["referenced"].ToString())

@@ -70,7 +70,7 @@ namespace tableshot
                     if (targetServerOption.HasValue())
                         Configuration.TargetCredentials = Util.ParseCredentials(targetServerOption.Value());
                     if (tablesOption.HasValue())
-                        Configuration.Tables = tablesOption.Values.Select(Util.ParseCloneTable).ToArray();
+                        Configuration.TableConfigurations = tablesOption.Values.Select(Util.ParseCloneTable).ToArray();
 
                     // execute the actual command
                     await command.Execute();

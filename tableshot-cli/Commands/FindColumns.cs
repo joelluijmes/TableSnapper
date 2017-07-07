@@ -38,7 +38,7 @@ namespace tableshot.Commands
             {
                 var manager = new DatabaseManager(sourceConnection);
 
-                var tables = await manager.ListShallowTablesAsync(Program.Configuration.Schema);
+                var tables = await manager.ListShallowTablesAsync(null, Program.Configuration.Schema);
                 var tableColumns = await Task.WhenAll(
                     tables.Select(async table => new
                     {

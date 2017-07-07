@@ -5,7 +5,7 @@ namespace tableshot
 {
     internal static class Util
     {
-        public static CloneTable ParseCloneTable(string cloneTableString)
+        public static TableConfiguration ParseCloneTable(string cloneTableString)
         {
             var splitted = cloneTableString.Split(':');
             //if (splitted.Length != 2)
@@ -16,7 +16,7 @@ namespace tableshot
                 ? ParseReferencedByOptions(splitted[1])
                 : ReferencedByOptions.Descending;
 
-            return new CloneTable
+            return new TableConfiguration
             {
                 Table = table,
                 ReferencedBy = referencedBy

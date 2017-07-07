@@ -1,6 +1,6 @@
 ﻿namespace tableshot.Models
 {
-    public sealed class CloneTable
+    public sealed class TableConfiguration
     {
         public ShallowTable Table { get; set; }
         

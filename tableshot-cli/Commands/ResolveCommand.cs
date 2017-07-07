@@ -20,7 +20,7 @@ namespace tableshot.Commands
 
         protected override async Task Execute(DatabaseManager databaseManager)
         {
-            var tables = Program.Configuration.Tables;
+            var tables = Program.Configuration.TableConfigurations;
 
             foreach (var table in tables)
             {

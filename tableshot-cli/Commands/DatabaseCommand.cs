@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.CommandLineUtils;
 using tableshot.Models;
@@ -18,6 +20,25 @@ namespace tableshot.Commands
             using (Connection = await DatabaseConnection.CreateConnectionAsync(source))
             {
                 var manager = new DatabaseManager(Connection);
+
+                var tableConfigurations = new List<TableConfiguration>();
+                foreach (var tableConfiguration in Program.Configuration.TableConfigurations)
+                {
+                    if (tableConfiguration.Table.SchemaName != "*")
+                    {
+                        tableConfigurations.Add(tableConfiguration);
+                        continue;
+                    }
+
+                    var tables = await manager.ListShallowTablesAsync(tableConfiguration.Table.Name, null);
+                    tableConfigurations.AddRange(tables.Select(table => new TableConfiguration
+                    {
+                        Table = table,
+                        ReferencedBy = tableConfiguration.ReferencedBy
+                    }));
+                }
+
+                Program.Configuration.TableConfigurations = tableConfigurations;
                 await Execute(manager);
             }
         }

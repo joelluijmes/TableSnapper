@@ -30,7 +30,7 @@ namespace tableshot.Commands
             // read the config
             var source = Program.Configuration.SourceCredentials.ToConnectionStringBuilder();
             var target = Program.Configuration.TargetCredentials.ToConnectionStringBuilder();
-            var tables = Program.Configuration.Tables;
+            var tables = Program.Configuration.TableConfigurations;
 
             // do the cloning
             using (var sourceConnection = await DatabaseConnection.CreateConnectionAsync(source))
