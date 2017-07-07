@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -227,14 +228,14 @@ namespace tableshot
 
         public Task CreateSchemaAsync(string schemaName) => Connection.ExecuteNonQueryAsync($"CREATE SCHEMA {schemaName}");
 
-        public Task DropTableAsync(ShallowTable table, bool checkIfTableIsReferenced = false) =>
+        public Task DropTableAsync(ShallowTable table, bool checkIfTableIsReferenced) =>
             DropTableAsync(table.Name, table.SchemaName, checkIfTableIsReferenced);
 
-        public async Task DropTableAsync(string tableName, string schemaName = null, bool checkIfTableIsReferenced = false)
+        public async Task DropTableAsync(string tableName, string schemaName, bool checkIfTableIsReferenced)
         {
             if (checkIfTableIsReferenced)
             {
-                var referencingKeys = await QueryTableForeignKeysAsync(null, tableName);
+                var referencingKeys = await QueryTableForeignKeysAsync(tableName, schemaName ?? SchemaName, ReferencedByOptions.Ascending);
 
                 if (referencingKeys.Any())
                     throw new InvalidOperationException($"This table is referenced by one or more foreign keys.");
@@ -296,7 +297,7 @@ namespace tableshot
         {
             var query = SqlQueryBuilder
                 .FromString("SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
-                .Where("TABLE_SCHEMA", schemaName ?? SchemaName)
+                .Where(schemaName ?? SchemaName, "TABLE_SCHEMA")
                 .ToString();
 
             var tables = new List<string>();
@@ -318,7 +319,7 @@ namespace tableshot
         {
             var query = SqlQueryBuilder
                 .FromString("SELECT SCHEMA_NAME, SCHEMA_OWNER FROM INFORMATION_SCHEMA.SCHEMATA")
-                .Where("SCHEMA_NAME", schemaName ?? SchemaName)
+                .Where(schemaName ?? SchemaName, "SCHEMA_NAME")
                 .ToString();
 
             var anyRow = false;
@@ -340,7 +341,7 @@ namespace tableshot
 
             var query = SqlQueryBuilder
                 .FromString("SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
-                .Where("TABLE_SCHEMA", schemaName)
+                .Where(schemaName, "TABLE_SCHEMA")
                 .ToString();
 
             await Connection.ExecuteQueryReaderAsync(query, tableRow =>
@@ -378,8 +379,8 @@ namespace tableshot
         {
             var query = SqlQueryBuilder
                 .FromString("SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
-                .Where("TABLE_SCHEMA", schemaName ?? SchemaName)
-                .Where("TABLE_NAME", tableName)
+                .Where(schemaName ?? SchemaName, "TABLE_SCHEMA")
+                .Where(tableName, "TABLE_NAME")
                 .ToString();
 
             var anyRow = false;
@@ -429,7 +430,7 @@ namespace tableshot
             return fullDictionary.Keys.TopologicalSort(table => fullDictionary[table]).ToList();
         }
 
-        public async Task<List<ShallowTable>> QueryTablesReferencedByAsync(string tableName, string schemaName = null, ReferencedByOptions options = ReferencedByOptions.FullDescend)
+        public async Task<List<ShallowTable>> QueryTablesReferencedByAsync(string tableName, string schemaName = null, ReferencedByOptions options = ReferencedByOptions.Descending)
         {
             _logger.LogDebug($"listing dependent tables of {tableName}..");
             var referencedTables = await QueryTablesReferencedByAsyncImpl(tableName, schemaName, options);
@@ -501,8 +502,8 @@ namespace tableshot
                     "		TABLE_SCHEMA as tableSchema,\r\n" +
                     "		(SELECT COLUMNPROPERTY(OBJECT_ID(TABLE_NAME), COLUMN_NAME, 'isIdentity')) as isIdentity\r\n" +
                     "FROM	INFORMATION_SCHEMA.COLUMNS")
-                .Where("TABLE_NAME", tableName)
-                .Where("TABLE_SCHEMA", schemaName ?? SchemaName)
+                .Where(tableName, "TABLE_NAME")
+                .Where(schemaName ?? SchemaName, "TABLE_SCHEMA")
                 .ToString();
 
             await Connection.ExecuteQueryReaderAsync(query, columnRow =>
@@ -540,7 +541,7 @@ namespace tableshot
             if (primaryKey != null)
                 keys.Add(primaryKey);
 
-            var foreignKeys = await QueryTableForeignKeysAsync(tableName, schemaName);
+            var foreignKeys = await QueryTableForeignKeysAsync(tableName, schemaName, ReferencedByOptions.Descending);
             if (foreignKeys != null)
                 keys.AddRange(foreignKeys);
 
@@ -560,10 +561,10 @@ namespace tableshot
                     "INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE col\r\n" +
                     "ON			tab.CONSTRAINT_NAME = col.CONSTRAINT_NAME AND\r\n" +
                     "			tab.TABLE_NAME = col.TABLE_NAME")
-                .Where("CONSTRAINT_TYPE", "PRIMARY KEY")
-                .Where("tab.TABLE_NAME", tableName)
-                .Where("tab.TABLE_SCHEMA", schemaName ?? SchemaName)
-                .Where("col.TABLE_SCHEMA", schemaName ?? SchemaName)
+                .Where("PRIMARY KEY", "CONSTRAINT_TYPE")
+                .Where(tableName, "tab.TABLE_NAME")
+                .Where(schemaName ?? SchemaName, "tab.TABLE_SCHEMA")
+                .Where(schemaName ?? SchemaName, "col.TABLE_SCHEMA")
                 .ToString();
 
             Key primaryKey = null;
@@ -583,12 +584,17 @@ namespace tableshot
             return primaryKey;
         }
 
-        private Task<List<Key>> QueryTableForeignKeysAsync(ShallowTable table, string referencedTableName = null) =>
-            QueryTableForeignKeysAsync(table.Name, table.SchemaName, referencedTableName);
+        private Task<List<Key>> QueryTableForeignKeysAsync(ShallowTable table, ReferencedByOptions options) =>
+            QueryTableForeignKeysAsync(table.Name, table.SchemaName, options);
 
-        private async Task<List<Key>> QueryTableForeignKeysAsync(string tableName, string schemaName = null, string referencedTableName = null)
+        private async Task<List<Key>> QueryTableForeignKeysAsync(string tableName, string schemaName, ReferencedByOptions options)
         {
-            var query = SqlQueryBuilder.FromString(
+            if (options == ReferencedByOptions.Disabled)
+                throw new ArgumentException("Disabled doesn't make sense in this context.", nameof(options));
+            if (!options.HasFlag(ReferencedByOptions.Ascending) && !options.HasFlag(ReferencedByOptions.Descending))
+                throw new ArgumentException("Can't resolve Foreign keys without selecting either Descending (referenced to) or Ascending (referenced by)", nameof(options));
+
+            var queryBuilder = SqlQueryBuilder.FromString(
                     "SELECT		COL_NAME(fc.parent_object_id, fc.parent_column_id) AS ColumnName,\r\n" +
                     "           f.name AS KeyName,\r\n" +
                     "			OBJECT_NAME (f.referenced_object_id) AS ReferenceTableName,\r\n" +
@@ -599,10 +605,13 @@ namespace tableshot
                     "FROM		sys.foreign_keys AS f\r\n" +
                     "INNER JOIN	sys.foreign_key_columns AS fc\r\n" +
                     "ON			f.OBJECT_ID = fc.constraint_object_id")
-                .Where("OBJECT_NAME(f.parent_object_id)", tableName)
-                .Where("OBJECT_NAME(f.referenced_object_id)", referencedTableName)
-                .Where("OBJECT_SCHEMA_NAME(fc.parent_object_id)", schemaName ?? SchemaName)
-                .ToString();
+                .Where(options.HasFlag(ReferencedByOptions.Ascending), "OBJECT_NAME(f.referenced_object_id)", tableName)
+                .Where(options.HasFlag(ReferencedByOptions.Descending), "OBJECT_NAME(f.parent_object_id)", tableName)
+                .Where(options.HasFlag(ReferencedByOptions.Schema) && options.HasFlag(ReferencedByOptions.Ascending), "OBJECT_SCHEMA_NAME(fc.parent_object_id)", schemaName ?? SchemaName)
+                .Where(options.HasFlag(ReferencedByOptions.Schema) && options.HasFlag(ReferencedByOptions.Descending), "OBJECT_SCHEMA_NAME(f.referenced_object_id)", schemaName ?? SchemaName)
+                .WhereEither(schemaName ?? SchemaName, "OBJECT_SCHEMA_NAME(f.referenced_object_id)", "OBJECT_SCHEMA_NAME(fc.parent_object_id)");
+            
+            var query = queryBuilder.ToString();
 
             var keys = new List<Key>();
             await Connection.ExecuteQueryReaderAsync(query, reader =>
@@ -623,29 +632,49 @@ namespace tableshot
             return keys;
         }
 
+        private Task<Dictionary<ShallowTable, List<ShallowTable>>> QueryTablesReferencedByAsyncImpl(ShallowTable table, ReferencedByOptions options) =>
+            QueryTablesReferencedByAsyncImpl(table.Name, table.SchemaName, options);
+        
         private async Task<Dictionary<ShallowTable, List<ShallowTable>>> QueryTablesReferencedByAsyncImpl(string tableName, string schemaName, ReferencedByOptions options)
         {
+            if (!options.HasFlag(ReferencedByOptions.Ascending) && !options.HasFlag(ReferencedByOptions.Descending))
+                throw new ArgumentException("Can't resolve Referenced Tables without selecting either Descending (referenced to) or Ascending (referenced by)", nameof(options));
+
             var tables = new Dictionary<ShallowTable, List<ShallowTable>>();
 
-            var foreignKeys = await QueryTableForeignKeysAsync(tableName, schemaName);
+            var foreignKeys = await QueryTableForeignKeysAsync(tableName, schemaName, options);
             foreach (var key in foreignKeys)
             {
                 var shallowTable = new ShallowTable(key.ForeignSchemaName, key.ForeignTable);
 
                 // check if we decend, if we do check if we limit to our own scheme only, and last skip already descended tables
                 if (options == ReferencedByOptions.Disabled || 
-                    options == ReferencedByOptions.SchemaOnly && !shallowTable.SchemaName.Equals(schemaName, StringComparison.CurrentCultureIgnoreCase) || 
+                    options == ReferencedByOptions.Schema && !shallowTable.SchemaName.Equals(schemaName, StringComparison.CurrentCultureIgnoreCase) || 
                     tables.ContainsKey(shallowTable))
                     continue;
 
-                var referenced = await QueryTablesReferencedByAsyncImpl(key.ForeignTable, key.ForeignSchemaName, options);
-                tables[shallowTable] = referenced.Keys.ToList();
-                foreach (var pair in referenced)
-                {
-                    if (tables.ContainsKey(pair.Key))
-                        Debugger.Break();
+                var foreignTables = new List<ShallowTable>();
+                if (options.HasFlag(ReferencedByOptions.Ascending))
+                    foreignTables.Add(new ShallowTable(key.SchemaName, key.TableName));
+                if (options.HasFlag(ReferencedByOptions.Descending))
+                    foreignTables.Add(new ShallowTable(key.ForeignSchemaName, key.ForeignTable));
 
-                    tables[pair.Key] = pair.Value;
+                foreach (var foreignTable in foreignTables)
+                {
+                    var referenced = await QueryTablesReferencedByAsyncImpl(foreignTable, options);
+                    if (tables.ContainsKey(foreignTable))
+                        continue;
+                        // throw new NotImplementedException($"Result Referenced Tables already contained definition for {foreignTable}, how to deal with this?");
+
+                    tables[foreignTable] = referenced.Keys.ToList();
+                    foreach (var pair in referenced)
+                    {
+                        if (tables.ContainsKey(pair.Key))
+                            continue;
+                            // throw new NotImplementedException($"Result Referenced Tables already contained definition for {pair.Key}, how to deal with this?");
+
+                        tables[pair.Key] = pair.Value;
+                    }
                 }
             }
 
@@ -676,7 +705,10 @@ namespace tableshot
 
             public override string ToString() => _stringBuilder.ToString();
 
-            public SqlQueryBuilder Where(string key, string value)
+            public SqlQueryBuilder Where(bool predicate, string key, string value) => 
+                predicate ? Where(value, key) : this;
+
+            public SqlQueryBuilder Where(string value, string key)
             {
                 if (string.IsNullOrEmpty(value))
                     return this;
@@ -684,6 +716,29 @@ namespace tableshot
                 _stringBuilder.Append(_appendWhere
                     ? $"\r\rAND {key}='{value}'"
                     : $"\r\nWHERE {key}='{value}'"
+                );
+
+                _appendWhere = true;
+                return this;
+            }
+
+            public SqlQueryBuilder WhereEither(string value, params string[] keys)
+            {
+                if (string.IsNullOrEmpty(value))
+                    return this;
+
+                var clause = "";
+                for (var i = 0; i < keys.Length; ++i)
+                {
+                    clause += $"{keys[i]}='{value}'";
+
+                    if (i < keys.Length - 1)
+                        clause += " OR ";
+                }
+
+                _stringBuilder.Append(_appendWhere
+                    ? $"\r\rAND ({clause})"
+                    : $"\r\nWHERE ({clause})"
                 );
 
                 _appendWhere = true;

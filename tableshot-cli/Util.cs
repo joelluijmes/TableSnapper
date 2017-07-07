@@ -14,7 +14,7 @@ namespace tableshot
             var table = ParseTableName(splitted[0]);
             var referencedBy = splitted.Length == 2
                 ? ParseReferencedByOptions(splitted[1])
-                : ReferencedByOptions.FullDescend;
+                : ReferencedByOptions.Descending;
 
             return new CloneTable
             {
@@ -50,13 +50,23 @@ namespace tableshot
             {
             case "schema":
             case "schema-only":
-                return ReferencedByOptions.SchemaOnly;
+                return ReferencedByOptions.Schema;
+            case "schema-ascend":
+                return ReferencedByOptions.Schema | ReferencedByOptions.Ascending;
+            case "schema-descend":
+                return ReferencedByOptions.Schema | ReferencedByOptions.Descending;
 
-            case "full":
+            case "descend":
+            case "descending":
             case "full-descend":
-                return ReferencedByOptions.FullDescend;
+                return ReferencedByOptions.Descending;
 
-            default:
+            case "ascend":
+            case "ascending":
+            case "full-ascend":
+                return ReferencedByOptions.Ascending;
+
+                default:
                 return ReferencedByOptions.Disabled;
             }
         }
