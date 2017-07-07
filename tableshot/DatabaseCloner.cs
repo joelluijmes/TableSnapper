@@ -51,7 +51,7 @@ namespace tableshot
 
             foreach (var schema in schemas)
             {
-                if (targetSchemas.Contains(schema))
+                if (targetSchemas.Any(s => schema.Equals(s, StringComparison.CurrentCultureIgnoreCase)))
                     continue;
 
                 if (options.CreateMissingSchemas)
@@ -62,7 +62,7 @@ namespace tableshot
 
             bool SkipShared(ShallowTable table) => options.SkipSharedTables && _targetConnection == _sourceConnection && table.SchemaName != sourceManager.SchemaName;
             string TargetSchemaName(ShallowTable table) => sourceManager == targetManager ? table.SchemaName : (options.TargetSchema ?? table.SchemaName);
-            
+
             // drop the target tables (if exists)
             foreach (var table in tables.Reverse())
             {
@@ -72,7 +72,7 @@ namespace tableshot
 
                 await targetManager.DropTableAsync(table.Name, TargetSchemaName(table), options.CheckReferencedTables);
             }
-
+            
             // copy the data from source to target
             foreach (var table in tables)
             {
