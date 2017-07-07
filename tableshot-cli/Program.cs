@@ -23,8 +23,6 @@ namespace tableshot
                 ApplicationLogging.LoggerFactory.AddConsole(LogLevel.Debug);
                 ApplicationLogging.LoggerFactory.AddDebug(LogLevel.Trace);
             }
-            else
-                ApplicationLogging.LoggerFactory.AddConsole(LogLevel.Information);
 
             _logger = ApplicationLogging.CreateLogger<Program>();
         }
@@ -88,7 +86,7 @@ namespace tableshot
 
         private static async Task MainImpl(string[] args)
         {
-            _logger.LogInformation("application started");
+            Console.WriteLine("application started");
 
             var commandApplication = new CommandLineApplication(false)
             {
@@ -106,7 +104,7 @@ namespace tableshot
 
             commandApplication.Execute(args);
 
-            _logger.LogInformation("application completed");
+            Console.WriteLine("application completed");
         }
     }
 }

@@ -57,8 +57,8 @@ namespace tableshot.Commands
                         .Where(tc => tc.column.Any())
                         .ToList();
 
-                    _logger.LogInformation($" tables and their columns like '{column}': ");
-                    _logger.LogInformation(matches.SelectMany(tc => tc.column).Aggregate("", (a, b) => $"{a}\r\n  {b}"));
+                    Console.WriteLine($" tables and their columns like '{column}': ");
+                    Console.WriteLine(matches.SelectMany(tc => tc.column).Aggregate("", (a, b) => $"{a}\r\n  {b}"));
                 }
             }
         }

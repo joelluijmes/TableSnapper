@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.CommandLineUtils;
 using Microsoft.Extensions.Logging;
@@ -25,8 +26,8 @@ namespace tableshot.Commands
             {
                 var referencedTables = await databaseManager.QueryTablesReferencedByAsync(table.Table, table.ReferencedBy);
 
-                _logger.LogInformation("All referenced tables on (in order of dependency):");
-                _logger.LogInformation(referencedTables.Aggregate($"{table.Table}", (a, b) => $"{a}\r\n {b}"));
+                Console.WriteLine("All referenced tables on (in order of dependency):");
+                Console.WriteLine(referencedTables.Aggregate($" {table.Table}", (a, b) => $"{a}\r\n  {b}"));
             }
         }
     }
