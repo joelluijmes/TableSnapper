@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 
 namespace tableshot.Models
 {
@@ -35,7 +36,12 @@ namespace tableshot.Models
         public bool IsPrimaryKey { get; }
         public bool IsForeignKey { get; }
 
-        public override string ToString() => KeyName;
+        public static IEqualityComparer<Key> KeyStructureComparer { get; } = new KeyStructureEqualityComparer();
+
+        public override string ToString()
+        {
+            return KeyName;
+        }
 
         private sealed class KeyStructureEqualityComparer : IEqualityComparer<Key>
         {
@@ -50,24 +56,27 @@ namespace tableshot.Models
                 if (x.GetType() != y.GetType())
                     return false;
 
-                return string.Equals(x.TableName, y.TableName) && string.Equals(x.Column, y.Column) && string.Equals(x.ForeignTable, y.ForeignTable) && string.Equals(x.ForeignColumn, y.ForeignColumn) && x.IsPrimaryKey == y.IsPrimaryKey && x.IsForeignKey == y.IsForeignKey;
+                return string.Equals(x.TableName, y.TableName, StringComparison.CurrentCultureIgnoreCase) &&
+                       string.Equals(x.Column, y.Column, StringComparison.CurrentCultureIgnoreCase) &&
+                       string.Equals(x.ForeignTable, y.ForeignTable, StringComparison.CurrentCultureIgnoreCase) &&
+                       string.Equals(x.ForeignColumn, y.ForeignColumn, StringComparison.CurrentCultureIgnoreCase) &&
+                       x.IsPrimaryKey == y.IsPrimaryKey &&
+                       x.IsForeignKey == y.IsForeignKey;
             }
 
             public int GetHashCode(Key obj)
             {
                 unchecked
                 {
-                    var hashCode = (obj.TableName != null ? obj.TableName.GetHashCode() : 0);
-                    hashCode = (hashCode * 397) ^ (obj.Column != null ? obj.Column.GetHashCode() : 0);
-                    hashCode = (hashCode * 397) ^ (obj.ForeignTable != null ? obj.ForeignTable.GetHashCode() : 0);
-                    hashCode = (hashCode * 397) ^ (obj.ForeignColumn != null ? obj.ForeignColumn.GetHashCode() : 0);
+                    var hashCode = obj.TableName?.ToLower()?.GetHashCode() ?? 0;
+                    hashCode = (hashCode * 397) ^ (obj.Column?.ToLower()?.GetHashCode() ?? 0);
+                    hashCode = (hashCode * 397) ^ (obj.ForeignTable?.ToLower()?.GetHashCode() ?? 0);
+                    hashCode = (hashCode * 397) ^ (obj.ForeignColumn?.ToLower()?.GetHashCode() ?? 0);
                     hashCode = (hashCode * 397) ^ obj.IsPrimaryKey.GetHashCode();
                     hashCode = (hashCode * 397) ^ obj.IsForeignKey.GetHashCode();
                     return hashCode;
                 }
             }
         }
-
-        public static IEqualityComparer<Key> KeyStructureComparer { get; } = new KeyStructureEqualityComparer();
     }
 }

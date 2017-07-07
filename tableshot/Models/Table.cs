@@ -16,6 +16,8 @@ namespace tableshot.Models
         public List<Key> Keys { get; }
         public List<Constraint> Constraints { get; }
 
+        public static IEqualityComparer<Table> TableStructureComparer { get; } = new TableStructureEqualityComparer();
+
         public override bool Equals(object obj)
         {
             if (ReferenceEquals(null, obj))
@@ -30,20 +32,29 @@ namespace tableshot.Models
         {
             unchecked
             {
-                var hashCode = Columns != null ? Columns.GetHashCode() : 0;
+                var hashCode = base.GetHashCode();
+                hashCode = (hashCode * 397) ^ (Columns != null ? Columns.GetHashCode() : 0);
                 hashCode = (hashCode * 397) ^ (Constraints != null ? Constraints.GetHashCode() : 0);
                 hashCode = (hashCode * 397) ^ (Keys != null ? Keys.GetHashCode() : 0);
-                hashCode = (hashCode * 397) ^ (Name != null ? Name.GetHashCode() : 0);
-                hashCode = (hashCode * 397) ^ (SchemaName != null ? SchemaName.GetHashCode() : 0);
                 return hashCode;
             }
         }
 
-        public static bool operator ==(Table left, Table right) => Equals(left, right);
+        public static bool operator ==(Table left, Table right)
+        {
+            return Equals(left, right);
+        }
 
-        public static bool operator !=(Table left, Table right) => !Equals(left, right);
-        
-        private bool Equals(Table other) => Equals(Columns, other.Columns) && Equals(Constraints, other.Constraints) && Equals(Keys, other.Keys) && string.Equals(Name, other.Name) && string.Equals(SchemaName, other.SchemaName);
+        public static bool operator !=(Table left, Table right)
+        {
+            return !Equals(left, right);
+        }
+
+        private bool Equals(Table other)
+        {
+            return base.Equals(other) && Equals(Columns, other.Columns) && Equals(Constraints, other.Constraints) && Equals(Keys, other.Keys);
+        }
+
 
         private sealed class TableStructureEqualityComparer : IEqualityComparer<Table>
         {
@@ -65,7 +76,7 @@ namespace tableshot.Models
             {
                 unchecked
                 {
-                    var hashCode = (obj.Name != null ? obj.Name.GetHashCode() : 0);
+                    var hashCode = obj.Name != null ? obj.Name.GetHashCode() : 0;
                     hashCode = (hashCode * 397) ^ (obj.Columns != null ? obj.Columns.GetHashCode() : 0);
                     hashCode = (hashCode * 397) ^ (obj.Keys != null ? obj.Keys.GetHashCode() : 0);
                     hashCode = (hashCode * 397) ^ (obj.Constraints != null ? obj.Constraints.GetHashCode() : 0);
@@ -73,7 +84,5 @@ namespace tableshot.Models
                 }
             }
         }
-
-        public static IEqualityComparer<Table> TableStructureComparer { get; } = new TableStructureEqualityComparer();
     }
 }
