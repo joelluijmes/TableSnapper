@@ -203,7 +203,7 @@ namespace tableshot
             var shallowTables = await ListShallowTablesAsync(tableName, schemaName);
             var tables = await Task.WhenAll(shallowTables.Select(async table => await QueryTableAsync(table)));
 
-            return SortTables(tables, sortOnDependency);
+            return TopologicalSort(tables, sortOnDependency);
         }
 
         public Task<List<ShallowTable>> ListTablesReferencedByAsync(ShallowTable table, ReferencedByOptions options)
@@ -222,8 +222,11 @@ namespace tableshot
             var referencedTables = await ListTablesReferencedByAsyncImpl(tableName, schemaName, options);
             referencedTables[new ShallowTable(schemaName, tableName)] = referencedTables.Keys.ToList();
 
-            var tables = referencedTables.Keys.TopologicalSort(table => referencedTables[table]).ToList();
+            var sorted = referencedTables.Keys.TopologicalSort(table => referencedTables[table]);
+            if (options.HasFlag(ReferencedByOptions.Ascending))
+                sorted = sorted.Reverse();
 
+            var tables = sorted.ToList();
             _logger.LogDebug($"found {tables.Count} dependent tables");
             return tables;
         }
@@ -273,9 +276,9 @@ namespace tableshot
             return anyRow;
         }
 
-        public static List<Table> SortTables(IEnumerable<Table> tables)
+        public static List<Table> TopologicalSort(IEnumerable<Table> tables)
         {
-            return SortTables(tables, true);
+            return TopologicalSort(tables, true);
         }
 
         public Task<bool> TableExistsAsync(ShallowTable table)
@@ -491,7 +494,7 @@ namespace tableshot
             return primaryKey;
         }
 
-        private static List<Table> SortTables(IEnumerable<Table> tables, bool sortOnDependency)
+        private static List<Table> TopologicalSort(IEnumerable<Table> tables, bool sortOnDependency)
         {
             var copyTables = tables.ToList();
 

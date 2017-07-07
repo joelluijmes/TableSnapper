@@ -37,7 +37,9 @@ namespace tableshot
                 table.ReferencedBy == ReferencedByOptions.Disabled
                     ? new[] {table.Table} as IList<ShallowTable>
                     : await sourceManager.ListTablesReferencedByAsync(table.Table, table.ReferencedBy)
-            ))).SelectMany(s => s).ToArray();
+            )))
+            .SelectMany(s => s)
+            .ToArray();
             
             // cache the schemas 
             var targetSchemas = await DatabaseManager.ListSchemasAsync(_targetConnection);
@@ -57,7 +59,7 @@ namespace tableshot
                 if (options.CreateMissingSchemas)
                     await targetManager.CreateSchemaAsync(schema);
                 else
-                    throw new InvalidOperationException("Schema doesn't exist, enable 'CreatingMissingSchemas' to create schema");
+                    throw new InvalidOperationException($"Schema '{schema}' doesn't exist, enable 'CreatingMissingSchemas' to create schema");
             }
 
             bool SkipShared(ShallowTable table) => options.SkipSharedTables && _targetConnection == _sourceConnection;
