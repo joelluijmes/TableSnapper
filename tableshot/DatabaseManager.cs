@@ -18,14 +18,12 @@ namespace tableshot
 
         private bool _disposed;
 
-        public DatabaseManager(DatabaseConnection connection, string schemaName)
+        public DatabaseManager(DatabaseConnection connection)
         {
             Connection = connection;
-            SchemaName = schemaName;
         }
 
         public DatabaseConnection Connection { get; }
-        public string SchemaName { get; }
 
         public async Task BackupToDirectoryAsync(string directory, string schemaName, bool splitPerTable = true, bool skipData = false)
         {
@@ -235,13 +233,13 @@ namespace tableshot
         {
             if (checkIfTableIsReferenced)
             {
-                var referencingKeys = await QueryTableForeignKeysAsync(tableName, schemaName ?? SchemaName, ReferencedByOptions.Ascending);
+                var referencingKeys = await QueryTableForeignKeysAsync(tableName, schemaName, ReferencedByOptions.Ascending);
 
                 if (referencingKeys.Any())
                     throw new InvalidOperationException($"This table is referenced by one or more foreign keys.");
             }
 
-            await Connection.ExecuteNonQueryAsync($"DROP TABLE IF EXISTS {schemaName ?? SchemaName}.{tableName}");
+            await Connection.ExecuteNonQueryAsync($"DROP TABLE IF EXISTS {schemaName}.{tableName}");
         }
 
         public override bool Equals(object obj)
@@ -277,7 +275,7 @@ namespace tableshot
         {
             unchecked
             {
-                return ((Connection != null ? Connection.GetHashCode() : 0) * 397) ^ (SchemaName != null ? SchemaName.GetHashCode() : 0);
+                return (Connection != null ? Connection.GetHashCode() : 0) * 397;
             }
         }
 
@@ -297,7 +295,7 @@ namespace tableshot
         {
             var query = SqlQueryBuilder
                 .FromString("SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
-                .Where(schemaName ?? SchemaName, "TABLE_SCHEMA")
+                .Where(schemaName, "TABLE_SCHEMA")
                 .ToString();
 
             var tables = new List<string>();
@@ -319,7 +317,7 @@ namespace tableshot
         {
             var query = SqlQueryBuilder
                 .FromString("SELECT SCHEMA_NAME, SCHEMA_OWNER FROM INFORMATION_SCHEMA.SCHEMATA")
-                .Where(schemaName ?? SchemaName, "SCHEMA_NAME")
+                .Where(schemaName, "SCHEMA_NAME")
                 .ToString();
 
             var anyRow = false;
@@ -361,8 +359,6 @@ namespace tableshot
 
         public async Task<Table> QueryTableAsync(string tableName, string schemaName)
         {
-            schemaName = schemaName ?? SchemaName;
-
             if (!await QueryTableExistsAsync(tableName, schemaName))
                 return null;
 
@@ -379,7 +375,7 @@ namespace tableshot
         {
             var query = SqlQueryBuilder
                 .FromString("SELECT TABLE_NAME, TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
-                .Where(schemaName ?? SchemaName, "TABLE_SCHEMA")
+                .Where(schemaName, "TABLE_SCHEMA")
                 .Where(tableName, "TABLE_NAME")
                 .ToString();
 
@@ -457,13 +453,11 @@ namespace tableshot
                     await TruncateTableAsync(table.Name, table.SchemaName);
             }
 
-            await Connection.ExecuteNonQueryAsync($"TRUNCATE TABLE {schemaName ?? SchemaName}.{tableName}");
+            await Connection.ExecuteNonQueryAsync($"TRUNCATE TABLE {schemaName}.{tableName}");
         }
 
-        private bool Equals(DatabaseManager other)
-        {
-            return Equals(Connection, other.Connection) && string.Equals(SchemaName, other.SchemaName);
-        }
+        private bool Equals(DatabaseManager other) => 
+            Equals(Connection, other.Connection);
 
         //public async Task<List<Table>> QueryTablesReferencedByAsync(string tableName, string schemaName)
         //{
@@ -503,7 +497,7 @@ namespace tableshot
                     "		(SELECT COLUMNPROPERTY(OBJECT_ID(TABLE_NAME), COLUMN_NAME, 'isIdentity')) as isIdentity\r\n" +
                     "FROM	INFORMATION_SCHEMA.COLUMNS")
                 .Where(tableName, "TABLE_NAME")
-                .Where(schemaName ?? SchemaName, "TABLE_SCHEMA")
+                .Where(schemaName, "TABLE_SCHEMA")
                 .ToString();
 
             await Connection.ExecuteQueryReaderAsync(query, columnRow =>
@@ -563,15 +557,15 @@ namespace tableshot
                     "			tab.TABLE_NAME = col.TABLE_NAME")
                 .Where("PRIMARY KEY", "CONSTRAINT_TYPE")
                 .Where(tableName, "tab.TABLE_NAME")
-                .Where(schemaName ?? SchemaName, "tab.TABLE_SCHEMA")
-                .Where(schemaName ?? SchemaName, "col.TABLE_SCHEMA")
+                .Where(schemaName, "tab.TABLE_SCHEMA")
+                .Where(schemaName, "col.TABLE_SCHEMA")
                 .ToString();
 
             Key primaryKey = null;
             await Connection.ExecuteQueryReaderAsync(query, reader =>
             {
                 primaryKey = new Key(
-                    schemaName ?? SchemaName,
+                    schemaName,
                     reader["tableName"].ToString(),
                     reader["columnName"].ToString(),
                     reader["keyName"].ToString()
@@ -607,9 +601,9 @@ namespace tableshot
                     "ON			f.OBJECT_ID = fc.constraint_object_id")
                 .Where(options.HasFlag(ReferencedByOptions.Ascending), "OBJECT_NAME(f.referenced_object_id)", tableName)
                 .Where(options.HasFlag(ReferencedByOptions.Descending), "OBJECT_NAME(f.parent_object_id)", tableName)
-                .Where(options.HasFlag(ReferencedByOptions.Schema) && options.HasFlag(ReferencedByOptions.Ascending), "OBJECT_SCHEMA_NAME(fc.parent_object_id)", schemaName ?? SchemaName)
-                .Where(options.HasFlag(ReferencedByOptions.Schema) && options.HasFlag(ReferencedByOptions.Descending), "OBJECT_SCHEMA_NAME(f.referenced_object_id)", schemaName ?? SchemaName)
-                .WhereEither(schemaName ?? SchemaName, "OBJECT_SCHEMA_NAME(f.referenced_object_id)", "OBJECT_SCHEMA_NAME(fc.parent_object_id)");
+                .Where(options.HasFlag(ReferencedByOptions.Schema) && options.HasFlag(ReferencedByOptions.Ascending), "OBJECT_SCHEMA_NAME(fc.parent_object_id)", schemaName)
+                .Where(options.HasFlag(ReferencedByOptions.Schema) && options.HasFlag(ReferencedByOptions.Descending), "OBJECT_SCHEMA_NAME(f.referenced_object_id)", schemaName)
+                .WhereEither(schemaName, "OBJECT_SCHEMA_NAME(f.referenced_object_id)", "OBJECT_SCHEMA_NAME(fc.parent_object_id)");
             
             var query = queryBuilder.ToString();
 

@@ -17,9 +17,7 @@ namespace tableshot.Commands
             var source = Program.Configuration.SourceCredentials.ToConnectionStringBuilder();
             using (Connection = await DatabaseConnection.CreateConnectionAsync(source))
             {
-                var schema = Program.Configuration.Schema ?? await DatabaseManager.GetDefaultSchema(Connection);
-
-                var manager = new DatabaseManager(Connection, schema);
+                var manager = new DatabaseManager(Connection);
                 await Execute(manager);
             }
         }

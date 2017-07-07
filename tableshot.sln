@@ -1,11 +1,13 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
-VisualStudioVersion = 15.0.26228.9
+VisualStudioVersion = 15.0.26430.6
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "tableshot", "tableshot\tableshot.csproj", "{B11706F5-10F5-4244-BE0B-FB6E98134DCA}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "tableshot-cli", "tableshot-cli\tableshot-cli.csproj", "{DD37ED87-588E-4040-8BDC-71B76112E382}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "tableshot-cli", "tableshot-cli\tableshot-cli.csproj", "{DD37ED87-588E-4040-8BDC-71B76112E382}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "tableshot-tmp", "tableshot-tmp\tableshot-tmp.csproj", "{51390E9B-7895-439F-99D4-3C92128B757A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,6 +23,10 @@ Global
 		{DD37ED87-588E-4040-8BDC-71B76112E382}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{DD37ED87-588E-4040-8BDC-71B76112E382}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{DD37ED87-588E-4040-8BDC-71B76112E382}.Release|Any CPU.Build.0 = Release|Any CPU
+		{51390E9B-7895-439F-99D4-3C92128B757A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{51390E9B-7895-439F-99D4-3C92128B757A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{51390E9B-7895-439F-99D4-3C92128B757A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{51390E9B-7895-439F-99D4-3C92128B757A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

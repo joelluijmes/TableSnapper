@@ -30,8 +30,8 @@ namespace tableshot
                 (string.IsNullOrEmpty(options.SourceSchema) && !string.IsNullOrEmpty(options.TargetSchema)))
                 throw new InvalidOperationException("Both or none Schema names should be given but not one.");
 
-            var sourceManager = new DatabaseManager(_sourceConnection, options.SourceSchema);
-            var targetManager = new DatabaseManager(_targetConnection, options.TargetSchema);
+            var sourceManager = new DatabaseManager(_sourceConnection);
+            var targetManager = new DatabaseManager(_targetConnection);
 
             var tables = (await Task.WhenAll(options.Tables.Select(async table =>
                 table.ReferencedBy == ReferencedByOptions.Disabled
@@ -60,7 +60,7 @@ namespace tableshot
                     throw new InvalidOperationException("Schema doesn't exist, enable 'CreatingMissingSchemas' to create schema");
             }
 
-            bool SkipShared(ShallowTable table) => options.SkipSharedTables && _targetConnection == _sourceConnection && table.SchemaName != sourceManager.SchemaName;
+            bool SkipShared(ShallowTable table) => options.SkipSharedTables && _targetConnection == _sourceConnection;
             string TargetSchemaName(ShallowTable table) => sourceManager == targetManager ? table.SchemaName : (options.TargetSchema ?? table.SchemaName);
 
             // drop the target tables (if exists)

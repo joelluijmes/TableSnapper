@@ -36,7 +36,7 @@ namespace tableshot.Commands
             // do the cloning
             using (var sourceConnection = await DatabaseConnection.CreateConnectionAsync(source))
             {
-                var manager = new DatabaseManager(sourceConnection, Program.Configuration.Schema);
+                var manager = new DatabaseManager(sourceConnection);
 
                 var tables = await manager.QueryShallowTablesAsync(Program.Configuration.Schema);
                 var tableColumns = await Task.WhenAll(
